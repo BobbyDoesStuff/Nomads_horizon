@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3 uid="uid://player_001"]
+
+[ext_resource type="Script" uid="uid://pc_script_001" path="res://scripts/player/player_controller.gd" id="1_pc"]
+
+[sub_resource type="CapsuleShape2D" id="player_shape"]
+radius = 16.0
+height = 32.0
+
+[node name="Player" type="CharacterBody2D" groups=["players"]]
+collision_layer = 1
+collision_mask = 1
+script = ExtResource("1_pc")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -40)
+scale = Vector2(1, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 20)
+shape = SubResource("player_shape")
+
+[node name="NameLabel" type="Label" parent="."]
+position = Vector2(0, -96)
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(1, 1, 1, 1)

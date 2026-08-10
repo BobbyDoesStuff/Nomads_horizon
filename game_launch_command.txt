@@ -1,0 +1,5 @@
+# Kill any old Godot instances first (to free port 27015)
+pkill -f Godot_v4 2>/dev/null
+
+# Launch the game
+/tmp/Godot_v4.4-stable_linux.x86_64 --path ~/projects/nomads_horizon

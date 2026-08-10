@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="16" fill="#1a1a2e"/>
+  <circle cx="64" cy="50" r="30" fill="#e2a03f" opacity="0.8"/>
+  <path d="M40 100 L64 65 L88 100 Z" fill="#3b7a57"/>
+  <text x="64" y="120" text-anchor="middle" fill="#c0a060" font-size="12" font-family="sans-serif">NH</text>
+</svg>

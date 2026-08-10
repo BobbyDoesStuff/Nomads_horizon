@@ -1,0 +1,123 @@
+[gd_scene load_steps=4 format=3 uid="uid://hud_001"]
+
+[ext_resource type="Script" uid="uid://hud_script_001" path="res://scripts/ui/hud.gd" id="1_hud"]
+[ext_resource type="Script" uid="uid://chat_script_001" path="res://scripts/ui/chat.gd" id="2_chat"]
+
+[node name="HUD" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1_hud")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="LeftPanel" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(180, 0)
+theme_override_constants/separation = 6
+
+[node name="HealthLabel" type="Label" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+text = "Health"
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.9, 0.3, 0.3, 1)
+
+[node name="HealthBar" type="ProgressBar" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+value = 100.0
+show_percentage = false
+theme_override_styles/fill = null
+
+[node name="StaminaLabel" type="Label" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+text = "Stamina"
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.3, 0.7, 0.3, 1)
+
+[node name="StaminaBar" type="ProgressBar" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+value = 100.0
+show_percentage = false
+
+[node name="CenterPanel" type="Control" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Hotbar" type="HBoxContainer" parent="MarginContainer/HBoxContainer/CenterPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 10.0
+grow_horizontal = 2
+alignment = 1
+theme_override_constants/separation = 4
+
+[node name="Slot1" type="ColorRect" parent="MarginContainer/HBoxContainer/CenterPanel/Hotbar"]
+custom_minimum_size = Vector2(48, 48)
+color = Color(0.15, 0.15, 0.2, 0.8)
+
+[node name="Slot2" type="ColorRect" parent="MarginContainer/HBoxContainer/CenterPanel/Hotbar"]
+custom_minimum_size = Vector2(48, 48)
+color = Color(0.15, 0.15, 0.2, 0.8)
+
+[node name="Slot3" type="ColorRect" parent="MarginContainer/HBoxContainer/CenterPanel/Hotbar"]
+custom_minimum_size = Vector2(48, 48)
+color = Color(0.15, 0.15, 0.2, 0.8)
+
+[node name="Slot4" type="ColorRect" parent="MarginContainer/HBoxContainer/CenterPanel/Hotbar"]
+custom_minimum_size = Vector2(48, 48)
+color = Color(0.15, 0.15, 0.2, 0.8)
+
+[node name="Slot5" type="ColorRect" parent="MarginContainer/HBoxContainer/CenterPanel/Hotbar"]
+custom_minimum_size = Vector2(48, 48)
+color = Color(0.15, 0.15, 0.2, 0.8)
+
+[node name="ChatBox" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -186.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+visible = false
+script = ExtResource("2_chat")
+
+[node name="ChatLog" type="RichTextLabel" parent="ChatBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+bbcode_enabled = true
+fit_content = true
+scroll_following = true
+
+[node name="LineEdit" type="LineEdit" parent="ChatBox"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -28.0
+grow_horizontal = 2
+placeholder_text = "Type a message..."

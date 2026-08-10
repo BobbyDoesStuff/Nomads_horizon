@@ -1,0 +1,85 @@
+[gd_scene load_steps=2 format=3 uid="uid://main_menu_001"]
+
+[ext_resource type="Script" uid="uid://mm_script_001" path="res://scripts/ui/main_menu.gd" id="1_main"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.06, 0.06, 0.12, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -130.0
+offset_right = 140.0
+offset_bottom = 130.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Nomad's Horizon"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 36
+theme_override_colors/font_color = Color(0.88, 0.75, 0.38, 1)
+
+[node name="Subtitle" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Wander. Trade. Build. Conquer."
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+
+[node name="Spacer0" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 10)
+
+[node name="HostBtn" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Host Game"
+theme_override_font_sizes/font_size = 16
+
+[node name="IPInput" type="LineEdit" parent="VBoxContainer"]
+layout_mode = 2
+placeholder_text = "Server IP (default: 127.0.0.1)"
+
+[node name="JoinBtn" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Join Game"
+theme_override_font_sizes/font_size = 16
+
+[node name="SoloBtn" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Play Solo"
+theme_override_font_sizes/font_size = 14
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="Spacer2" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 8)
+
+[node name="QuitBtn" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Quit"
+theme_override_font_sizes/font_size = 13

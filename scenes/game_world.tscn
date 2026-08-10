@@ -1,0 +1,32 @@
+[gd_scene load_steps=2 format=3 uid="uid://game_world_001"]
+
+[ext_resource type="Script" uid="uid://gw_script_001" path="res://scripts/world/game_world.gd" id="1_gw"]
+
+[node name="GameWorld" type="Node2D"]
+script = ExtResource("1_gw")
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -1
+
+[node name="Background" type="ColorRect" parent="BackgroundLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.95, 0.95, 0.92, 1)
+
+[node name="Instructions" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 40.0
+text = "WASD to move  |  Right-click to walk  |  Esc to quit"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.4, 0.4, 0.4, 1)
