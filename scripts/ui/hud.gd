@@ -10,6 +10,7 @@ const MAP_IMAGE_PATH := "res://assets/tiles/background.png"
 
 var _minimap:      Control       = null
 var _minimap_dot:  ColorRect     = null
+var _remote_dots:  Dictionary    = {}    # peer_id → ColorRect
 var _map_size:     Vector2       = Vector2.ZERO
 
 
@@ -67,15 +68,48 @@ func _build_minimap() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _minimap_dot == null or _map_size == Vector2.ZERO:
+	if _map_size == Vector2.ZERO:
 		return
-	var player := _get_local_player()
-	if player == null:
-		return
+
 	var sx: float = _minimap.size.x / _map_size.x
 	var sy: float = _minimap.size.y / _map_size.y
-	_minimap_dot.position = Vector2(player.global_position.x * sx - 2.0,
-	                                player.global_position.y * sy - 2.0)
+	var seen_ids: Array = []
+
+	for node in get_tree().get_nodes_in_group("players"):
+		if not (node is CharacterBody2D):
+			continue
+		var pid: int = node.name.to_int()
+		seen_ids.append(pid)
+
+		if node.is_multiplayer_authority():
+			# Local player — red dot
+			if _minimap_dot:
+				_minimap_dot.position = Vector2(node.global_position.x * sx - 2.0,
+				                                node.global_position.y * sy - 2.0)
+		else:
+			# Remote player — light blue dot
+			var dot: ColorRect = _remote_dots.get(pid, null)
+			if dot == null:
+				dot = _make_remote_dot()
+				_remote_dots[pid] = dot
+			dot.position = Vector2(node.global_position.x * sx - 2.0,
+			                       node.global_position.y * sy - 2.0)
+
+	# Remove dots for players that left
+	for pid in _remote_dots.keys():
+		if not seen_ids.has(pid):
+			var dot: ColorRect = _remote_dots[pid]
+			dot.queue_free()
+			_remote_dots.erase(pid)
+
+
+func _make_remote_dot() -> ColorRect:
+	var dot := ColorRect.new()
+	dot.color = Color(0.3, 0.7, 1.0, 0.9)  # light blue
+	dot.custom_minimum_size = Vector2(5, 5)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minimap.add_child(dot)
+	return dot
 
 
 func _get_local_player() -> CharacterBody2D:
