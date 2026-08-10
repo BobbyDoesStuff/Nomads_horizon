@@ -6,12 +6,9 @@ extends CharacterBody2D
 var _target:         Vector2
 var _target_set:     bool    = false
 var _remote_pos:     Vector2
-var _prev_remote_pos: Vector2  # for deriving remote movement direction
-var _remote_dir:     Vector2  # last known remote movement direction
 var _sync_timer:     float   = 0.0
-var _ready_sent:     bool    = false
 var _facing_dir:     int     = 0       # 0-7, remembered during idle
-var _current_anim:   String  = ""      # track to avoid restarting every frame
+var _current_anim:   String  = ""
 
 # ------------------------------------------------------------------ direction constants
 # Row order in the sprite sheet (top to bottom):
@@ -19,32 +16,19 @@ var _current_anim:   String  = ""      # track to avoid restarting every frame
 #   4=N(up)    5=NE(up-right)   6=E(right)  7=SE(down-right)
 #
 # Godot angle convention: 0=right(E), PI/2=down(S), PI=left(W), -PI/2=up(N)
-# Mapping from godot-angle-sector to sprite-sheet row:
 const SECTOR_TO_ROW := [6, 7, 0, 1, 2, 3, 4, 5]
 # sector:             0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
 # mapped:             6=E 7=SE 0=S 1=SW 2=W 3=NW 4=N 5=NE
-const WALK_ROW_OFFSET := 4  # walk rows are rotated 180° vs idle rows in the sheet
 
-const DIR_NAMES := [
-	"walk_down",         # 0
-	"walk_down_left",    # 1
-	"walk_left",         # 2
-	"walk_up_left",      # 3
-	"walk_up",           # 4
-	"walk_up_right",     # 5
-	"walk_right",        # 6
-	"walk_down_right",   # 7
+const WALK_ROW_OFFSET := 4   # walk rows rotated 180° vs idle rows
+
+const ANIM_WALK := [
+	"walk_down", "walk_down_left", "walk_left", "walk_up_left",
+	"walk_up", "walk_up_right", "walk_right", "walk_down_right",
 ]
-
-const IDLE_NAMES := [
-	"idle_down",
-	"idle_down_left",
-	"idle_left",
-	"idle_up_left",
-	"idle_up",
-	"idle_up_right",
-	"idle_right",
-	"idle_down_right",
+const ANIM_IDLE := [
+	"idle_down", "idle_down_left", "idle_left", "idle_up_left",
+	"idle_up", "idle_up_right", "idle_right", "idle_down_right",
 ]
 
 const FRAME_W := 128
@@ -55,75 +39,74 @@ const DIR_COUNT   := 8
 
 func _ready() -> void:
 	_remote_pos = global_position
-	_prev_remote_pos = global_position
-	# Defer target init so game_world can set our position first
 	await get_tree().process_frame
 	_target = global_position
 	_target_set = true
 
 	_setup_sprite_frames()
 	_setup_name_label()
+	_setup_camera()
 
-	# Tell the server we're ready (client-side only)
 	if multiplayer.multiplayer_peer != null and not NetworkManager.is_server:
 		_tell_server_ready()
+
+
+# ------------------------------------------------------------------ camera
+func _setup_camera() -> void:
+	var is_local := multiplayer.multiplayer_peer == null or is_multiplayer_authority()
+	if not is_local:
+		return
+	var cam := Camera2D.new()
+	cam.name = "Camera2D"
+	cam.position_smoothing_enabled = false
+	cam.make_current()
+	add_child(cam)
 
 
 # ------------------------------------------------------------------ sprite setup
 func _setup_sprite_frames() -> void:
 	var sf := SpriteFrames.new()
-
-	# Load PNGs from raw file bytes (bypasses Godot import system)
 	var walk_img := _load_png("res://assets/sprites/spr_normal_walk.png")
 	var idle_img := _load_png("res://assets/sprites/spr_normal_idle.png")
-
 	if walk_img == null or idle_img == null:
-		push_error("[Player] Missing sprite sheets — check assets/sprites/")
+		push_error("[Player] Missing sprite sheets")
 		return
-
 	var walk_tex := ImageTexture.create_from_image(walk_img)
 	var idle_tex := ImageTexture.create_from_image(idle_img)
 
 	for row in DIR_COUNT:
-		# ---- walk animation (8 frames per row) ----
-		sf.add_animation(DIR_NAMES[row])
-		sf.set_animation_speed(DIR_NAMES[row], 10.0)
-		sf.set_animation_loop(DIR_NAMES[row], true)
+		sf.add_animation(ANIM_WALK[row])
+		sf.set_animation_speed(ANIM_WALK[row], 10.0)
+		sf.set_animation_loop(ANIM_WALK[row], true)
 		for col in WALK_FRAMES:
-			var atlas := AtlasTexture.new()
-			atlas.atlas = walk_tex
-			atlas.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
-			sf.add_frame(DIR_NAMES[row], atlas)
+			var at := AtlasTexture.new()
+			at.atlas = walk_tex
+			at.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
+			sf.add_frame(ANIM_WALK[row], at)
 
-		# ---- idle animation (1 frame per row) ----
-		sf.add_animation(IDLE_NAMES[row])
-		sf.set_animation_speed(IDLE_NAMES[row], 4.0)
-		sf.set_animation_loop(IDLE_NAMES[row], true)
-		var atlas := AtlasTexture.new()
-		atlas.atlas = idle_tex
-		atlas.region = Rect2(0, row * FRAME_H, FRAME_W, FRAME_H)
-		sf.add_frame(IDLE_NAMES[row], atlas)
+		sf.add_animation(ANIM_IDLE[row])
+		sf.set_animation_speed(ANIM_IDLE[row], 4.0)
+		sf.set_animation_loop(ANIM_IDLE[row], true)
+		var at := AtlasTexture.new()
+		at.atlas = idle_tex
+		at.region = Rect2(0, row * FRAME_H, FRAME_W, FRAME_H)
+		sf.add_frame(ANIM_IDLE[row], at)
 
 	var sprite: AnimatedSprite2D = $AnimatedSprite2D
 	sprite.sprite_frames = sf
-	_current_anim = IDLE_NAMES[0]
+	_current_anim = ANIM_IDLE[0]
 	sprite.play(_current_anim)
 
 
 func _load_png(path: String) -> Image:
-	## Reads a PNG from disk via FileAccess (no .import file needed).
 	if not FileAccess.file_exists(path):
-		push_error("[Player] File not found: " + path)
 		return null
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		push_error("[Player] Cannot open: " + path)
 		return null
 	var bytes := file.get_buffer(file.get_length())
 	var img := Image.new()
-	var err := img.load_png_from_buffer(bytes)
-	if err != OK:
-		push_error("[Player] Failed to decode PNG: " + path)
+	if img.load_png_from_buffer(bytes) != OK:
 		return null
 	return img
 
@@ -137,7 +120,6 @@ func _setup_name_label() -> void:
 
 # ------------------------------------------------------------------ direction helpers
 func _get_dir_index(vec: Vector2) -> int:
-	## Returns 0-7 for the 8 sprite-sheet rows, or -1 when still.
 	if vec.length_squared() < 0.5:
 		return -1
 	var angle := vec.angle()
@@ -147,22 +129,12 @@ func _get_dir_index(vec: Vector2) -> int:
 	return SECTOR_TO_ROW[sector]
 
 
-func _update_animation(vec: Vector2) -> void:
-	var dir := _get_dir_index(vec)
-	var desired: String
-	if dir >= 0:
-		_facing_dir = dir
-		# Walk sprite sheet rows are offset from idle rows by 4 (180°)
-		desired = DIR_NAMES[(dir + WALK_ROW_OFFSET) % DIR_COUNT]
-	else:
-		desired = IDLE_NAMES[_facing_dir]
-
-	# Only switch if the animation actually changed — prevents restarting every frame
-	if desired != _current_anim:
-		_current_anim = desired
+func _play_anim(anim: String) -> void:
+	if anim != _current_anim:
+		_current_anim = anim
 		var sprite: AnimatedSprite2D = $AnimatedSprite2D
-		if sprite.sprite_frames and sprite.sprite_frames.has_animation(desired):
-			sprite.play(desired)
+		if sprite.sprite_frames and sprite.sprite_frames.has_animation(anim):
+			sprite.play(anim)
 
 
 # ------------------------------------------------------------------ network
@@ -171,7 +143,6 @@ func _tell_server_ready() -> void:
 		var world := get_parent()
 		if world and world.has_method("_new_client_ready"):
 			world._new_client_ready.rpc_id(1)
-			_ready_sent = true
 			return
 		await get_tree().create_timer(0.1).timeout
 	print("[Player] Warning: could not send ready signal to server")
@@ -179,38 +150,45 @@ func _tell_server_ready() -> void:
 
 # ------------------------------------------------------------------ main loop
 func _physics_process(delta: float) -> void:
+	if not _target_set:
+		return
+
 	if not is_multiplayer_authority():
-		# Remote player — interpolate position, use synced facing
+		# Remote player — interpolate, use synced _facing_dir
 		global_position = global_position.lerp(_remote_pos, 0.25)
-
 		var moving := _remote_pos.distance_to(global_position) > 4.0
-		var desired: String
 		if moving:
-			desired = DIR_NAMES[(_facing_dir + WALK_ROW_OFFSET) % DIR_COUNT]
+			_play_anim(ANIM_WALK[(_facing_dir + WALK_ROW_OFFSET) % DIR_COUNT])
 		else:
-			desired = IDLE_NAMES[_facing_dir]
-
-		if desired != _current_anim:
-			_current_anim = desired
-			var sprite: AnimatedSprite2D = $AnimatedSprite2D
-			if sprite.sprite_frames and sprite.sprite_frames.has_animation(desired):
-				sprite.play(desired)
+			_play_anim(ANIM_IDLE[_facing_dir])
 		return
 
 	# ---- local / authority ----
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var dir := Vector2.ZERO
+
 	if input != Vector2.ZERO:
 		_target = global_position
-		_target_set = true
-		velocity = input * speed
+		dir = input
+		velocity = dir * speed
 	else:
-		var dist := _target - global_position
-		if dist.length() > 4.0:
-			velocity = dist.normalized() * speed
+		var to_target := _target - global_position
+		var dist := to_target.length()
+		if dist > 2.0:
+			dir = to_target / dist
+			# Cap speed so move_and_slide() never overshoots the target.
+			# Overshoot → character turns around → _facing_dir flips 180°.
+			velocity = dir * minf(speed, dist / delta)
 		else:
 			velocity = Vector2.ZERO
 
-	_update_animation(velocity)
+	var idx := _get_dir_index(dir)
+	if idx >= 0:
+		_facing_dir = idx
+		_play_anim(ANIM_WALK[(idx + WALK_ROW_OFFSET) % DIR_COUNT])
+	else:
+		_play_anim(ANIM_IDLE[_facing_dir])
+
 	move_and_slide()
 
 	# Position sync to server (20× / sec)
@@ -229,7 +207,6 @@ func _physics_process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
-	# Right-click to move
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		_target = get_global_mouse_position()
 		_target_set = true
