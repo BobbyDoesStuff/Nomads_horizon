@@ -3,6 +3,7 @@ extends Node
 
 signal connection_succeeded()
 signal connection_failed()
+signal chat_received(sender_id: int, message: String)
 
 const DEFAULT_PORT := 27015
 const MAX_PLAYERS   := 64
@@ -47,6 +48,12 @@ func close_connection() -> void:
 	is_server = false
 	player_id = 0
 	print("[Net] Disconnected")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func send_chat(text: String) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	chat_received.emit(sender_id, text)
 
 
 func _connect_signals() -> void:

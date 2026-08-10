@@ -193,16 +193,19 @@ func _physics_process(delta: float) -> void:
 	else:
 		_play_anim(ANIM_IDLE[_facing_dir])
 
-	# DEBUG: show facing direction label
-	$NameLabel.text = ANIM_IDLE[_facing_dir]
 
 	move_and_slide()
+
+	# Clamp to map bounds
+	var world := get_parent()
+	if world and world.has_method("is_in_bounds") and not world.is_in_bounds(global_position):
+		global_position.x = clampf(global_position.x, 0, world._map_bounds.size.x)
+		global_position.y = clampf(global_position.y, 0, world._map_bounds.size.y)
 
 	# Position sync to server (20x / sec)
 	_sync_timer += delta
 	if _sync_timer > 0.05 and multiplayer.multiplayer_peer != null and multiplayer.get_peers().size() > 0:
 		_sync_timer = 0.0
-		var world := get_parent()
 		if world and world.has_method("recv_position"):
 			if NetworkManager.is_server:
 				world._broadcast_position.rpc(name.to_int(), global_position, _facing_dir)
@@ -211,12 +214,27 @@ func _physics_process(delta: float) -> void:
 
 
 # ------------------------------------------------------------------ input
+func _is_click_on_minimap(screen_pos: Vector2) -> bool:
+	var vs: Vector2 = get_viewport().get_visible_rect().size
+	var mm_right: float  = vs.x - 12.0
+	var mm_bottom: float = vs.y - 12.0
+	var mm_left: float   = mm_right - 200.0
+	var mm_top: float    = mm_bottom - 117.0
+	return screen_pos.x >= mm_left and screen_pos.x <= mm_right and \
+	       screen_pos.y >= mm_top  and screen_pos.y <= mm_bottom
+
+
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		_target = get_global_mouse_position()
-		_target_set = true
+		if _is_click_on_minimap(event.global_position):
+			return  # let the HUD handle minimap clicks
+		var click_pos := get_global_mouse_position()
+		var world := get_parent()
+		if world and world.has_method("is_in_bounds") and world.is_in_bounds(click_pos):
+			_target = click_pos
+			_target_set = true
 	if event.is_action_pressed("ui_cancel"):
 		if multiplayer.multiplayer_peer != null:
 			NetworkManager.close_connection()
