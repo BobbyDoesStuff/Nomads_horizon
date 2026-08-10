@@ -14,13 +14,15 @@ var _current_anim:   String  = ""
 # Row order in the sprite sheet (top to bottom):
 #   0=S(down)  1=SW(down-left)  2=W(left)  3=NW(up-left)
 #   4=N(up)    5=NE(up-right)   6=E(right)  7=SE(down-right)
+# NOTE: the actual sprite sheet is rotated 180 deg relative to the
+# labels — row 0 shows N(up), row 2 shows E(right), etc.
 #
 # Godot angle convention: 0=right(E), PI/2=down(S), PI=left(W), -PI/2=up(N)
-const SECTOR_TO_ROW := [6, 7, 0, 1, 2, 3, 4, 5]
+const SECTOR_TO_ROW := [2, 3, 4, 5, 6, 7, 0, 1]
 # sector:             0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
-# mapped:             6=E 7=SE 0=S 1=SW 2=W 3=NW 4=N 5=NE
+# mapped (180 deg rot):2=E 3=SE 4=S 5=SW 6=W 7=NW 0=N 1=NE
 
-const WALK_ROW_OFFSET := 4   # walk rows rotated 180° vs idle rows
+const WALK_ROW_OFFSET := 0   # both sheets share the same rotation, no relative offset
 
 const ANIM_WALK := [
 	"walk_down", "walk_down_left", "walk_left", "walk_up_left",
@@ -174,12 +176,14 @@ func _physics_process(delta: float) -> void:
 	else:
 		var to_target := _target - global_position
 		var dist := to_target.length()
-		if dist > 2.0:
+		# Threshold must be >1 frame of movement to catch WASD release,
+		# where _target lags behind and points opposite to movement.
+		var stop_dist := maxf(2.0, speed * delta * 1.5)
+		if dist > stop_dist:
 			dir = to_target / dist
-			# Cap speed so move_and_slide() never overshoots the target.
-			# Overshoot → character turns around → _facing_dir flips 180°.
 			velocity = dir * minf(speed, dist / delta)
 		else:
+			_target = global_position
 			velocity = Vector2.ZERO
 
 	var idx := _get_dir_index(dir)
@@ -189,9 +193,12 @@ func _physics_process(delta: float) -> void:
 	else:
 		_play_anim(ANIM_IDLE[_facing_dir])
 
+	# DEBUG: show facing direction label
+	$NameLabel.text = ANIM_IDLE[_facing_dir]
+
 	move_and_slide()
 
-	# Position sync to server (20× / sec)
+	# Position sync to server (20x / sec)
 	_sync_timer += delta
 	if _sync_timer > 0.05 and multiplayer.multiplayer_peer != null and multiplayer.get_peers().size() > 0:
 		_sync_timer = 0.0
