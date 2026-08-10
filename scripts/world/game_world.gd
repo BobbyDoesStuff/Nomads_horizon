@@ -11,6 +11,7 @@ var _bg_image:        Image     = null   # for alpha-sampling walkability
 
 
 func _ready() -> void:
+	y_sort_enabled = true   # draw by Y position — lower = behind, higher = in front
 	_setup_map()
 	_setup_hud()
 
@@ -85,7 +86,7 @@ func _setup_hud() -> void:
 		add_child(hud)
 
 
-func _add_sprite(img_path: String, pos: Vector2, z: int) -> Sprite2D:
+func _add_sprite(img_path: String, pos: Vector2, z: int, center: bool = true) -> Sprite2D:
 	var img := _load_image(img_path)
 	if img == null:
 		return null
@@ -93,20 +94,21 @@ func _add_sprite(img_path: String, pos: Vector2, z: int) -> Sprite2D:
 	var s := Sprite2D.new()
 	s.texture = tex
 	s.global_position = pos
-	s.centered = true
+	s.centered = center
 	s.z_index = z
 	add_child(s)
 	return s
 
 
 func _place_path(filename: String, pos: Vector2) -> void:
-	_add_sprite(TILE_DIR + "/path_tiles/" + filename, pos, -10)
+	_add_sprite(TILE_DIR + "/path_tiles/" + filename, pos, 0)  # same z so Y-sort works
 
 
 func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) -> void:
-	## Places an obstacle sprite with a StaticBody2D + collision shape.
-	var sprite := _add_sprite(TILE_DIR + "/obstacles/" + rel_path, pos, 0)
-	if sprite == null:
+	## Places an obstacle with a StaticBody2D + collision shape.
+	## The sprite is non-centered so its origin is at the base for Y-sorting.
+	var img := _load_image(TILE_DIR + "/obstacles/" + rel_path)
+	if img == null:
 		return
 
 	var body := StaticBody2D.new()
@@ -116,13 +118,19 @@ func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) ->
 	body.collision_mask = 0
 	add_child(body)
 
+	# Sprite with origin at base centre (not centred) for correct Y-sorting
+	var tex := ImageTexture.create_from_image(img)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.centered = false
+	sprite.position = Vector2(-img.get_width() / 2.0, -img.get_height())
+	sprite.z_index = 0
+	body.add_child(sprite)
+
 	var shape := CollisionShape2D.new()
 	shape.shape = RectangleShape2D.new()
 	shape.shape.size = collision_size
 	body.add_child(shape)
-
-	# Move the sprite to be a child of the body for consistent transforms
-	sprite.reparent(body)
 
 
 func _load_image(path: String) -> Image:
