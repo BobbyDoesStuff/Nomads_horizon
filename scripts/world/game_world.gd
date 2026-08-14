@@ -253,16 +253,6 @@ func is_in_bounds(pos: Vector2) -> bool:
 	return pos.x >= 0 and pos.y >= 0 and pos.x <= _map_bounds.size.x and pos.y <= _map_bounds.size.y
 
 
-func is_walkable(pos: Vector2) -> bool:
-	if not is_in_bounds(pos):
-		return false
-	if not _nav_ready:
-		return true
-	var gx := clampi(int(pos.x / CELL), 0, _gc - 1)
-	var gy := clampi(int(pos.y / CELL), 0, _gr - 1)
-	return not _astar_grid.is_point_solid(Vector2i(gx, gy))
-
-
 func is_water(pos: Vector2) -> bool:
 	if not _nav_ready:
 		return false
