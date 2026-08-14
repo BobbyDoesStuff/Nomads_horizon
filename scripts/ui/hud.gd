@@ -81,6 +81,11 @@ func _build_minimap() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Update stamina bar from the local player.
+	var local := _get_local_player()
+	if local:
+		set_stamina(local.stamina, local.max_stamina)
+
 	if _map_size == Vector2.ZERO:
 		return
 

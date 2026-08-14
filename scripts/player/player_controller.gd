@@ -2,6 +2,12 @@ extends CharacterBody2D
 ## Player — WASD + right-click-to-move. 8-directional isometric sprite.
 
 @export var speed: float = 250.0
+@export var sprint_speed: float = 400.0
+@export var max_stamina: float = 100.0
+@export var stamina_drain: float = 25.0   # per second while sprinting
+@export var stamina_regen: float = 20.0   # per second while not sprinting
+
+var stamina: float = 0.0
 
 var _target:         Vector2
 var _target_set:     bool    = false
@@ -46,6 +52,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_target = global_position
 	_target_set = true
+	stamina = max_stamina
 
 	_setup_sprite_frames()
 	_setup_name_label()
@@ -203,25 +210,34 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# ---- local / authority ----
+	var sprinting := Input.is_action_pressed("sprint") and stamina > 0.0
+	var move_speed := sprint_speed if sprinting else speed
+
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var dir := Vector2.ZERO
 
 	if input != Vector2.ZERO:
 		_target = global_position
 		dir = input
-		velocity = dir * speed
+		velocity = dir * move_speed
 	else:
 		var to_target := _target - global_position
 		var dist := to_target.length()
 		# Threshold must be >1 frame of movement to catch WASD release,
 		# where _target lags behind and points opposite to movement.
-		var stop_dist := maxf(2.0, speed * delta * 1.5)
+		var stop_dist := maxf(2.0, move_speed * delta * 1.5)
 		if dist > stop_dist:
 			dir = to_target / dist
-			velocity = dir * minf(speed, dist / delta)
+			velocity = dir * minf(move_speed, dist / delta)
 		else:
 			_target = global_position
 			velocity = Vector2.ZERO
+
+	# Drain stamina while sprinting-and-moving; regenerate otherwise.
+	if sprinting and dir != Vector2.ZERO:
+		stamina = maxf(0.0, stamina - stamina_drain * delta)
+	else:
+		stamina = minf(max_stamina, stamina + stamina_regen * delta)
 
 	var idx := _get_dir_index(dir)
 	if idx >= 0:
