@@ -13,6 +13,7 @@ const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
 const RESOURCE_SCRIPT := preload("res://scripts/world/resource_node.gd")
+const BUILD_SCRIPT := preload("res://scripts/world/build_manager.gd")
 const CAMPFIRE_SCRIPT := preload("res://scripts/world/campfire.gd")
 
 var _remote_players: Dictionary = {}
@@ -120,6 +121,7 @@ func _setup_map() -> void:
 	_place_obstacle("structures/Rubble 2x2A.png",              Vector2(3700, 3400), Vector2(180, 140))
 
 	_place_campfire()
+	_setup_build()
 
 	_build_navigation()
 	_bg_image = null  # free the ~114 MB source image now that the grid is built
@@ -205,6 +207,13 @@ func _place_campfire() -> void:
 	var campfire = CAMPFIRE_SCRIPT.new()
 	add_child(campfire)
 	campfire.setup("res://assets/sprites/spr_campfire.png", _map_bounds.get_center())
+
+
+func _setup_build() -> void:
+	## Build system (block placement on an isometric grid).
+	var build = BUILD_SCRIPT.new()
+	build.name = "BuildManager"
+	add_child(build)
 
 
 func _add_collision_polygon(body: StaticBody2D, img: Image, fallback_size: Vector2) -> void:

@@ -42,6 +42,9 @@ var _hunger_timer:   float   = 0.0
 var _nearby_resource: Node   = null  # resource node in range (axe/pickaxe equipped)
 var _near_water:     bool    = false # near/touching/inside water (fishing rod)
 var _water_dir:      Vector2 = Vector2.ZERO  # direction toward the nearest water
+var _build_mode:     bool    = false # build mode active
+var _build_layer:    int     = 0     # current build layer (0 = foundation)
+var _ghost:          Sprite2D = null # block placement preview
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
 
@@ -468,6 +471,46 @@ func _update_nearby_water() -> void:
 		_water_dir = Vector2.ZERO
 
 
+# ------------------------------------------------------------------ build mode
+func _get_build_manager() -> Node:
+	return get_tree().get_first_node_in_group("build")
+
+
+func _set_build_mode(on: bool) -> void:
+	_build_mode = on
+	if _ghost == null:
+		_ghost = Sprite2D.new()
+		_ghost.centered = false
+		_ghost.modulate = Color(1, 1, 1, 0.5)
+		_ghost.z_index = 100
+		var bm := _get_build_manager()
+		if bm:
+			_ghost.texture = bm.get_block_texture()
+		add_child(_ghost)
+	_ghost.visible = on
+	if on:
+		_cancel_harvest()
+		_channeling = false
+		_build_layer = 0
+
+
+func _update_build_ghost() -> void:
+	if _ghost == null or not _build_mode:
+		return
+	var bm := _get_build_manager()
+	if bm == null:
+		return
+	var grid: Vector2i = bm.grid_coords(get_global_mouse_position())
+	_ghost.global_position = bm.block_top_left(grid, _build_layer)
+
+
+func _place_build_block() -> void:
+	var bm := _get_build_manager()
+	if bm == null:
+		return
+	bm.place_block(get_global_mouse_position(), _build_layer)
+
+
 func _spawn_float_text(text: String, color: Color) -> void:
 	var label := Label.new()
 	label.text = text
@@ -729,6 +772,8 @@ func _physics_process(delta: float) -> void:
 
 	_update_nearby_resource()
 	_update_nearby_water()
+	if _build_mode:
+		_update_build_ghost()
 
 	# While channeling (digging/fishing/watering/harvesting), stand still until movement interrupts.
 	if _channeling:
@@ -894,11 +939,26 @@ func _on_path_ready(path: Array) -> void:
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
-	# Tool selection: number keys 1-9 (1 = empty hands, 2-9 = tools).
+	# Tool selection: number keys 1-9, and B to toggle build mode.
 	if event is InputEventKey and event.pressed and not event.echo:
 		if not _is_typing():
 			if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 				_set_tool(event.keycode - KEY_2)
+			elif event.keycode == KEY_B:
+				_set_build_mode(not _build_mode)
+	# Build mode: scroll to change layer, left-click to place a block.
+	if _build_mode and event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_WHEEL_UP:
+				_build_layer += 1
+				return
+			MOUSE_BUTTON_WHEEL_DOWN:
+				_build_layer = maxi(0, _build_layer - 1)
+				return
+			MOUSE_BUTTON_LEFT:
+				if not _is_typing():
+					_place_build_block()
+				return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if not _is_typing():
 			_start_attack()
