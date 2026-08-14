@@ -167,6 +167,9 @@ func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) ->
 	var shape := CollisionShape2D.new()
 	shape.shape = RectangleShape2D.new()
 	shape.shape.size = collision_size
+	# Align the box with the sprite: the sprite sits above the base point, so
+	# shift the collision up so its bottom edge rests on the base.
+	shape.position = Vector2(0, -collision_size.y / 2.0)
 	body.add_child(shape)
 
 
@@ -192,7 +195,7 @@ func _build_navigation() -> void:
 				if gc is CollisionShape2D and gc.shape is RectangleShape2D:
 					var s: RectangleShape2D = gc.shape
 					var sz: Vector2 = s.size + Vector2(AGENT * 2, AGENT * 2)
-					_prects.append(Rect2(child.global_position - sz / 2.0, sz))
+					_prects.append(Rect2(gc.global_position - sz / 2.0, sz))
 					break
 
 	_gc = ceili(_map_bounds.size.x / CELL)

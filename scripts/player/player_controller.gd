@@ -168,7 +168,7 @@ func _setup_name_label() -> void:
 		label.text = "P" + label.text
 	# Center the name horizontally over the player's head.
 	label.size = Vector2(120, 18)
-	label.position = Vector2(-60, -116)
+	label.position = Vector2(-60, -156)
 
 
 func _setup_chat_bubble() -> void:
@@ -203,7 +203,7 @@ func _setup_attack() -> void:
 	_slash.joint_mode = Line2D.LINE_JOINT_ROUND
 	_slash.begin_cap_mode = Line2D.LINE_CAP_ROUND
 	_slash.end_cap_mode = Line2D.LINE_CAP_ROUND
-	_slash.position = Vector2(0, -40)
+	_slash.position = Vector2(0, -80)
 	_slash.visible = false
 	_slash.z_index = 5
 	# Arc swept from -1 to +1 rad, radius 55.
@@ -279,7 +279,7 @@ func _setup_healthbar() -> void:
 	_healthbar.value = health
 	_healthbar.show_percentage = false
 	_healthbar.size = Vector2(60, 8)
-	_healthbar.position = Vector2(-30, -98)
+	_healthbar.position = Vector2(-30, -138)
 	_healthbar.visible = true
 	_healthbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fill := StyleBoxFlat.new()
@@ -321,7 +321,7 @@ func _spawn_damage_number(amount: float) -> void:
 	var label := Label.new()
 	label.text = "-%d" % int(round(amount))
 	label.size = Vector2(60, 22)
-	label.position = Vector2(-30 + randf_range(-12.0, 12.0), -140)
+	label.position = Vector2(-30 + randf_range(-12.0, 12.0), -180)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 18)
