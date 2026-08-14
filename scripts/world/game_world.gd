@@ -13,6 +13,7 @@ const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
 const TREE_SCRIPT := preload("res://scripts/world/tree.gd")
+const CAMPFIRE_SCRIPT := preload("res://scripts/world/campfire.gd")
 
 var _remote_players: Dictionary = {}
 var _spawned:         bool      = false
@@ -118,6 +119,8 @@ func _setup_map() -> void:
 	_place_obstacle("structures/Prefab Wall NW - 2x1 - Size 1.png", Vector2(1000, 2100), Vector2(160, 40))
 	_place_obstacle("structures/Rubble 2x2A.png",              Vector2(3700, 3400), Vector2(180, 140))
 
+	_place_campfire()
+
 	_build_navigation()
 	_bg_image = null  # free the ~114 MB source image now that the grid is built
 	print("[World] Map built")
@@ -193,6 +196,15 @@ func _place_tree(rel_path: String, pos: Vector2, collision_size: Vector2, id: in
 	# Inflated footprint for the coarse pathfinding grid (same as obstacles).
 	var inflated := collision_size + Vector2(AGENT * 2, AGENT * 2)
 	_prects.append(Rect2(pos + Vector2(0, -collision_size.y / 2.0) - inflated / 2.0, inflated))
+
+
+func _place_campfire() -> void:
+	## Animated campfire at the centre of the map (decorative, no collision).
+	if _map_bounds.size == Vector2.ZERO:
+		return
+	var campfire = CAMPFIRE_SCRIPT.new()
+	add_child(campfire)
+	campfire.setup("res://assets/sprites/spr_campfire.png", _map_bounds.get_center())
 
 
 func _add_collision_polygon(body: StaticBody2D, img: Image, fallback_size: Vector2) -> void:
