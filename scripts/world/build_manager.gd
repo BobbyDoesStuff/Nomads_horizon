@@ -65,6 +65,20 @@ func place_block(world_pos: Vector2, layer: int, tile: int = DEFAULT_TILE, flip_
 	# child carries the visual elevation, so stacked blocks keep the same sort Y.
 	var node := Node2D.new()
 	node.position = block_anchor(grid, 0)
+
+	# Collision on the diamond footprint — blocks the player from walking through.
+	var body := StaticBody2D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	var shape := CollisionShape2D.new()
+	var poly := ConvexPolygonShape2D.new()
+	poly.points = PackedVector2Array([
+		Vector2(0, -HALF_H), Vector2(HALF_W, 0), Vector2(0, HALF_H), Vector2(-HALF_W, 0),
+	])
+	shape.shape = poly
+	body.add_child(shape)
+	node.add_child(body)
+
 	var sprite := Sprite2D.new()
 	sprite.texture = tex
 	sprite.centered = true
