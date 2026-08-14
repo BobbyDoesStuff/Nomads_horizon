@@ -7,6 +7,8 @@ const HEALTH_SYNC_INTERVAL := 0.5
 const CELL := 48
 const AGENT := 48
 const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
+const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
+const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
 
 var _remote_players: Dictionary = {}
 var _spawned:         bool      = false
@@ -17,6 +19,7 @@ var _astar_grid: AStarGrid2D = null
 var _gc: int = 0
 var _gr: int = 0
 var _prects: Array = []        # inflated obstacle rects for the grid
+var _water: Array = []         # _water[gy][gx] — true where the background is transparent (water)
 var _nav_ready: bool = false
 
 
@@ -67,6 +70,9 @@ func _setup_map() -> void:
 		bg.texture = BACKGROUND_TEX
 		bg.centered = false   # top-left at (0,0); world coords = pixel coords
 		bg.z_index = -1000
+		var water_mat := ShaderMaterial.new()
+		water_mat.shader = WATER_SHADER
+		bg.material = water_mat
 		add_child(bg)
 		print("[World] Background loaded — ", _bg_image.get_width(), "x", _bg_image.get_height())
 
@@ -196,11 +202,15 @@ func _build_navigation() -> void:
 	_astar_grid.cell_size = Vector2(CELL, CELL)
 	_astar_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_astar_grid.update()
+	_water.clear()
 	for gy in _gr:
+		var wrow: Array = []
+		wrow.resize(_gc)
 		for gx in _gc:
 			var wx := gx * CELL + CELL / 2.0
 			var wy := gy * CELL + CELL / 2.0
 			var solid := false
+			var is_water := false
 			if _bg_image:
 				var px := int(wx)
 				var py := int(wy)
@@ -208,6 +218,7 @@ func _build_navigation() -> void:
 					solid = true
 				elif _bg_image.get_pixel(px, py).a < 0.1:
 					solid = true
+					is_water = true
 			if not solid:
 				for r in _prects:
 					if (r as Rect2).has_point(Vector2(wx, wy)):
@@ -215,6 +226,8 @@ func _build_navigation() -> void:
 						break
 			if solid:
 				_astar_grid.set_point_solid(Vector2i(gx, gy), true)
+			wrow[gx] = is_water
+		_water.append(wrow)
 	_nav_ready = true
 	print("[Nav] ", _gc, "x", _gr, " grid, ", _prects.size(), " obstacles")
 
@@ -234,6 +247,20 @@ func is_walkable(pos: Vector2) -> bool:
 	var gx := clampi(int(pos.x / CELL), 0, _gc - 1)
 	var gy := clampi(int(pos.y / CELL), 0, _gr - 1)
 	return not _astar_grid.is_point_solid(Vector2i(gx, gy))
+
+
+func is_water(pos: Vector2) -> bool:
+	if not _nav_ready:
+		return false
+	var gx := clampi(int(pos.x / CELL), 0, _gc - 1)
+	var gy := clampi(int(pos.y / CELL), 0, _gr - 1)
+	return _water[gy][gx]
+
+
+func spawn_ripple(pos: Vector2) -> void:
+	var ripple: Node2D = RIPPLE_SCRIPT.new() as Node2D
+	ripple.position = pos
+	add_child(ripple)
 
 
 # ------------------------------------------------------------------ spawn helpers

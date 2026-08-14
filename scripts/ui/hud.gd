@@ -2,6 +2,7 @@ extends CanvasLayer
 ## HUD overlay — health, hotbar, minimap, and chat toggle.
 
 const MAP_IMAGE_PATH := "res://assets/tiles/background.png"
+const WATER_MINIMAP_SHADER := preload("res://assets/shaders/water_minimap.gdshader")
 
 @onready var health_bar:  ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/HealthBar
 @onready var stamina_bar: ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/StaminaBar
@@ -57,6 +58,9 @@ func _build_minimap() -> void:
 			rect.stretch_mode = TextureRect.STRETCH_SCALE
 			rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			var water_mat := ShaderMaterial.new()
+			water_mat.shader = WATER_MINIMAP_SHADER
+			rect.material = water_mat
 			_minimap.add_child(rect)
 
 	# Player position dot

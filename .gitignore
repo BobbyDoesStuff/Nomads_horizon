@@ -1,6 +1,5 @@
 # Godot
 .godot/
-*.import
 *.uid
 *.translation
 export/

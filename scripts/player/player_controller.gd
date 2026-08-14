@@ -16,6 +16,7 @@ var _path:           Array   = []
 var _path_idx:       int     = 0
 var _stuck_time:     float   = 0.0
 var _stuck_at:       Vector2
+var _ripple_timer:   float   = 0.0
 var _target_set:     bool    = false
 var _snap_pos:       Array[Vector2] = []
 var _snap_time:      Array[float]   = []
@@ -99,8 +100,17 @@ func _setup_camera() -> void:
 	var cam := Camera2D.new()
 	cam.name = "Camera2D"
 	cam.position_smoothing_enabled = false
-	cam.make_current()
+	# Clamp the camera to the map so it never shows past the water's edge.
+	var world := get_parent()
+	if world and world.has_method("is_in_bounds"):
+		var bounds: Rect2 = world._map_bounds
+		if bounds.size != Vector2.ZERO:
+			cam.limit_left = int(bounds.position.x)
+			cam.limit_top = int(bounds.position.y)
+			cam.limit_right = int(bounds.end.x)
+			cam.limit_bottom = int(bounds.end.y)
 	add_child(cam)
+	cam.make_current()
 
 
 # ------------------------------------------------------------------ sprite setup
@@ -533,6 +543,15 @@ func _physics_process(delta: float) -> void:
 	if world and world.has_method("is_in_bounds") and not world.is_in_bounds(global_position):
 		global_position.x = clampf(global_position.x, 0, world._map_bounds.size.x)
 		global_position.y = clampf(global_position.y, 0, world._map_bounds.size.y)
+
+	# Water ripple effect while stepping over the transparent water edges.
+	if world and world.has_method("is_water") and world.is_water(global_position):
+		if velocity.length_squared() > 25.0:
+			_ripple_timer += delta
+			if _ripple_timer >= 0.25:
+				_ripple_timer = 0.0
+				if world.has_method("spawn_ripple"):
+					world.spawn_ripple(global_position)
 
 	# Position sync to server (20x / sec)
 	_sync_timer += delta
