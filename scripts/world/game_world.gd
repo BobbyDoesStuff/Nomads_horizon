@@ -167,13 +167,35 @@ func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) ->
 	sprite.z_index = 0
 	body.add_child(sprite)
 
-	var shape := CollisionShape2D.new()
-	shape.shape = RectangleShape2D.new()
-	shape.shape.size = collision_size
-	# Align the box with the sprite: the sprite sits above the base point, so
-	# shift the collision up so its bottom edge rests on the base.
-	shape.position = Vector2(0, -collision_size.y / 2.0)
-	body.add_child(shape)
+	# Collision matches the sprite's opaque pixels (transparent background is passable).
+	_add_collision_polygon(body, img, collision_size)
+
+	# Inflated footprint for the coarse pathfinding grid.
+	var inflated := collision_size + Vector2(AGENT * 2, AGENT * 2)
+	_prects.append(Rect2(pos + Vector2(0, -collision_size.y / 2.0) - inflated / 2.0, inflated))
+
+
+func _add_collision_polygon(body: StaticBody2D, img: Image, fallback_size: Vector2) -> void:
+	# Build a collision outline from the sprite's opaque pixels.
+	var points := PackedVector2Array()
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in range(0, h, 4):
+		for x in range(0, w, 4):
+			if img.get_pixel(x, y).a > 0.1:
+				points.append(Vector2(x - w / 2.0, y - h))
+	if points.size() < 3:
+		# Fallback rectangle.
+		var shape := CollisionShape2D.new()
+		shape.shape = RectangleShape2D.new()
+		shape.shape.size = fallback_size
+		shape.position = Vector2(0, -fallback_size.y / 2.0)
+		body.add_child(shape)
+		return
+	var hull := Geometry2D.convex_hull(points)
+	var cp := CollisionPolygon2D.new()
+	cp.polygon = hull
+	body.add_child(cp)
 
 
 func _load_image(path: String) -> Image:
@@ -192,15 +214,6 @@ func _load_image(path: String) -> Image:
 
 # Build the walkable grid once (obstacles are static, so this never changes).
 func _build_navigation() -> void:
-	for child in get_children():
-		if child is StaticBody2D:
-			for gc in child.get_children():
-				if gc is CollisionShape2D and gc.shape is RectangleShape2D:
-					var s: RectangleShape2D = gc.shape
-					var sz: Vector2 = s.size + Vector2(AGENT * 2, AGENT * 2)
-					_prects.append(Rect2(gc.global_position - sz / 2.0, sz))
-					break
-
 	_gc = ceili(_map_bounds.size.x / CELL)
 	_gr = ceili(_map_bounds.size.y / CELL)
 	_astar_grid = AStarGrid2D.new()
