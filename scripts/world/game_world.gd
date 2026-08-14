@@ -76,36 +76,36 @@ func _setup_map() -> void:
 		add_child(bg)
 		print("[World] Background loaded — ", _bg_image.get_width(), "x", _bg_image.get_height())
 
-	# -- path tiles (walkable, no collision) — around map centre --
-	_place_path("Muddy Road NWxSE A.png", Vector2(3300, 1900))
-	_place_path("Muddy Road NWxSE B.png", Vector2(3600, 2100))
-	_place_path("Muddy Road NExSW A.png", Vector2(3500, 2000))
-	_place_path("Muddy Road NExSW B.png", Vector2(3800, 2200))
-	_place_path("Muddy Road Xroad.png",    Vector2(3400, 2100))
-	_place_path("Muddy Road E Bend.png",   Vector2(3700, 1950))
+	# -- path tiles (walkable, no collision) — scattered across the map --
+	_place_path("Muddy Road NWxSE A.png", Vector2(2500, 1500))
+	_place_path("Muddy Road NWxSE B.png", Vector2(4500, 2600))
+	_place_path("Muddy Road NExSW A.png", Vector2(4500, 1500))
+	_place_path("Muddy Road NExSW B.png", Vector2(2500, 2600))
+	_place_path("Muddy Road Xroad.png",    Vector2(3500, 2041))
+	_place_path("Muddy Road E Bend.png",   Vector2(5500, 2000))
 
-	# -- obstacles (unwalkable, with collision) — around map centre --
+	# -- obstacles (unwalkable, with collision) — dispersed across the map --
 	# Flora
-	_place_obstacle("flora/Dense Trees - size 2 - 2x2A.png", Vector2(3200, 1800), Vector2(200, 120))
-	_place_obstacle("flora/Dense Trees - size 3 - 3x3A.png", Vector2(3800, 1900), Vector2(260, 160))
-	_place_obstacle("flora/Dense Flora - size 1 - 2x2A.png", Vector2(3600, 2300), Vector2(160, 120))
-	_place_obstacle("flora/Dense Trees - size 2 - 2x2B.png", Vector2(3100, 2200), Vector2(200, 120))
+	_place_obstacle("flora/Dense Trees - size 2 - 2x2A.png", Vector2(2000, 1500), Vector2(200, 120))
+	_place_obstacle("flora/Dense Trees - size 3 - 3x3A.png", Vector2(5000, 1400), Vector2(260, 160))
+	_place_obstacle("flora/Dense Flora - size 1 - 2x2A.png", Vector2(4500, 2600), Vector2(160, 120))
+	_place_obstacle("flora/Dense Trees - size 2 - 2x2B.png", Vector2(2400, 2700), Vector2(200, 120))
 
 	# Rocks
-	_place_obstacle("rocks/Rocky Cover - Size 1A.png", Vector2(3400, 1800), Vector2(140, 100))
-	_place_obstacle("rocks/Rocky Cover - Size 2A.png", Vector2(3900, 2150), Vector2(220, 140))
-	_place_obstacle("rocks/Rocky Cover - Size 3A.png", Vector2(3200, 2000), Vector2(280, 180))
+	_place_obstacle("rocks/Rocky Cover - Size 1A.png", Vector2(3000, 900), Vector2(140, 100))
+	_place_obstacle("rocks/Rocky Cover - Size 2A.png", Vector2(5200, 2200), Vector2(220, 140))
+	_place_obstacle("rocks/Rocky Cover - Size 3A.png", Vector2(1800, 2400), Vector2(280, 180))
 
 	# Infrastructure
-	_place_obstacle("infrastructure/Small Crates 1A.png",     Vector2(3500, 1850), Vector2(100, 60))
-	_place_obstacle("infrastructure/Tent A.a - Green.png",    Vector2(3300, 2100), Vector2(110, 80))
-	_place_obstacle("infrastructure/Sandbags E-W - Tan.png",  Vector2(3700, 2050), Vector2(130, 40))
-	_place_obstacle("infrastructure/Concrete Foundation A.png", Vector2(3550, 2200), Vector2(180, 120))
+	_place_obstacle("infrastructure/Small Crates 1A.png",     Vector2(4000, 3200), Vector2(100, 60))
+	_place_obstacle("infrastructure/Tent A.a - Green.png",    Vector2(2800, 2000), Vector2(110, 80))
+	_place_obstacle("infrastructure/Sandbags E-W - Tan.png",  Vector2(4600, 1900), Vector2(130, 40))
+	_place_obstacle("infrastructure/Concrete Foundation A.png", Vector2(3500, 700), Vector2(180, 120))
 
 	# Structures
-	_place_obstacle("structures/Prefab Building - Size 1A.png", Vector2(3750, 1900), Vector2(180, 130))
-	_place_obstacle("structures/Prefab Wall NW - 2x1 - Size 1.png", Vector2(3400, 1950), Vector2(160, 40))
-	_place_obstacle("structures/Rubble 2x2A.png",              Vector2(3650, 2150), Vector2(180, 140))
+	_place_obstacle("structures/Prefab Building - Size 1A.png", Vector2(6000, 2000), Vector2(180, 130))
+	_place_obstacle("structures/Prefab Wall NW - 2x1 - Size 1.png", Vector2(1000, 2100), Vector2(160, 40))
+	_place_obstacle("structures/Rubble 2x2A.png",              Vector2(3700, 3400), Vector2(180, 140))
 
 	_build_navigation()
 	_bg_image = null  # free the ~114 MB source image now that the grid is built
@@ -138,7 +138,7 @@ func _add_sprite(img_path: String, pos: Vector2, z: int, center: bool = true) ->
 
 
 func _place_path(filename: String, pos: Vector2) -> void:
-	_add_sprite(TILE_DIR + "/path_tiles/" + filename, pos, 0)  # same z so Y-sort works
+	_add_sprite(TILE_DIR + "/path_tiles/" + filename, pos, -1)  # below objects so roads never draw over characters
 
 
 func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) -> void:
