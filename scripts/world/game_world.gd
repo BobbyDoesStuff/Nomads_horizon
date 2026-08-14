@@ -6,6 +6,7 @@ const TILE_DIR     := "res://assets/tiles"
 const HEALTH_SYNC_INTERVAL := 0.5
 const CELL := 48
 const AGENT := 48
+const WATER_RES := 4   # fine water-mask resolution (pixels per cell)
 const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
@@ -19,7 +20,9 @@ var _astar_grid: AStarGrid2D = null
 var _gc: int = 0
 var _gr: int = 0
 var _prects: Array = []        # inflated obstacle rects for the grid
-var _water: Array = []         # _water[gy][gx] — true where the background is transparent (water)
+var _water_fine: PackedByteArray = PackedByteArray()  # 0=land, 1=water (fine resolution)
+var _water_w: int = 0
+var _water_h: int = 0
 var _nav_ready: bool = false
 
 
@@ -205,15 +208,11 @@ func _build_navigation() -> void:
 	_astar_grid.cell_size = Vector2(CELL, CELL)
 	_astar_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_astar_grid.update()
-	_water.clear()
 	for gy in _gr:
-		var wrow: Array = []
-		wrow.resize(_gc)
 		for gx in _gc:
 			var wx := gx * CELL + CELL / 2.0
 			var wy := gy * CELL + CELL / 2.0
 			var solid := false
-			var is_water := false
 			if _bg_image:
 				var px := int(wx)
 				var py := int(wy)
@@ -221,7 +220,6 @@ func _build_navigation() -> void:
 					solid = true
 				elif _bg_image.get_pixel(px, py).a < 0.1:
 					solid = true
-					is_water = true
 			if not solid:
 				for r in _prects:
 					if (r as Rect2).has_point(Vector2(wx, wy)):
@@ -229,8 +227,21 @@ func _build_navigation() -> void:
 						break
 			if solid:
 				_astar_grid.set_point_solid(Vector2i(gx, gy), true)
-			wrow[gx] = is_water
-		_water.append(wrow)
+
+	# Finer-resolution water mask so the map edge reads as water, not land.
+	_water_w = ceili(_map_bounds.size.x / WATER_RES)
+	_water_h = ceili(_map_bounds.size.y / WATER_RES)
+	_water_fine.resize(_water_w * _water_h)
+	for fy in _water_h:
+		for fx in _water_w:
+			var px := fx * WATER_RES + WATER_RES / 2
+			var py := fy * WATER_RES + WATER_RES / 2
+			var w := 0
+			if _bg_image and px < _bg_image.get_width() and py < _bg_image.get_height():
+				if _bg_image.get_pixel(px, py).a < 0.1:
+					w = 1
+			_water_fine[fy * _water_w + fx] = w
+
 	_nav_ready = true
 	print("[Nav] ", _gc, "x", _gr, " grid, ", _prects.size(), " obstacles")
 
@@ -255,9 +266,9 @@ func is_walkable(pos: Vector2) -> bool:
 func is_water(pos: Vector2) -> bool:
 	if not _nav_ready:
 		return false
-	var gx := clampi(int(pos.x / CELL), 0, _gc - 1)
-	var gy := clampi(int(pos.y / CELL), 0, _gr - 1)
-	return _water[gy][gx]
+	var fx := clampi(int(pos.x / WATER_RES), 0, _water_w - 1)
+	var fy := clampi(int(pos.y / WATER_RES), 0, _water_h - 1)
+	return _water_fine[fy * _water_w + fx] == 1
 
 
 func get_water_depth(pos: Vector2) -> float:

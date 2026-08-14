@@ -1,7 +1,7 @@
 shader_type canvas_item;
 // Hides the bottom of the sprite as the player submerges in water.
 // Uses local vertex position (not UV) so it works with AtlasTexture frames.
-// The water line tilts by `water_slope` so diagonal facings cut at ~45°.
+// The water line tilts by `water_slope` so diagonal facings cut at ~20°.
 
 uniform float submersion : hint_range(0.0, 1.0) = 0.0;
 uniform float water_slope : hint_range(-1.0, 1.0) = 0.0;
@@ -15,9 +15,9 @@ void vertex() {
 }
 
 void fragment() {
-	// Frame is 160px tall and centered: top = -80, bottom = +80.
 	float water_line = 80.0 - 160.0 * submersion;
-	if (local_y - water_slope * local_x > water_line) {
+	// Fully hidden once submerged, so the tilted line can't leave a top sliver.
+	if (submersion >= 1.0 || local_y - water_slope * local_x > water_line) {
 		discard;
 	}
 	COLOR = texture(TEXTURE, UV);

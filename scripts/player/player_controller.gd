@@ -370,6 +370,13 @@ func _process(_delta: float) -> void:
 			var tilt := tan(deg_to_rad(20.0))
 			slope = -tilt if facing.x * facing.y > 0.0 else tilt
 		_submerge_mat.set_shader_parameter("water_slope", slope)
+		# Hide the name + health bar once the character is fully submerged.
+		var submerged := depth >= 0.85
+		var name_label := $NameLabel
+		if name_label:
+			name_label.visible = not submerged
+		if _healthbar:
+			_healthbar.visible = not submerged
 
 
 func _do_attack_hit() -> void:
