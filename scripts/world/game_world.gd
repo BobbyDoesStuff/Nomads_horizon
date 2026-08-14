@@ -7,6 +7,8 @@ const HEALTH_SYNC_INTERVAL := 0.5
 const CELL := 48
 const AGENT := 48
 const WATER_RES := 4   # fine water-mask resolution (pixels per cell)
+const DIST_RES := 16   # water-distance field resolution (pixels per cell)
+const SQRT2 := 1.41421356237
 const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
@@ -24,6 +26,10 @@ var _prects: Array = []        # inflated obstacle rects for the grid
 var _water_fine: PackedByteArray = PackedByteArray()  # 0=land, 1=water (fine resolution)
 var _water_w: int = 0
 var _water_h: int = 0
+var _water_dist: PackedFloat32Array = PackedFloat32Array()  # distance-to-water field (DIST_RES cells)
+var _dist_w: int = 0
+var _dist_h: int = 0
+var _water_mat: ShaderMaterial = null
 var _nav_ready: bool = false
 
 
@@ -74,9 +80,10 @@ func _setup_map() -> void:
 		bg.texture = BACKGROUND_TEX
 		bg.centered = false   # top-left at (0,0); world coords = pixel coords
 		bg.z_index = -1000
-		var water_mat := ShaderMaterial.new()
-		water_mat.shader = WATER_SHADER
-		bg.material = water_mat
+		_water_mat = ShaderMaterial.new()
+		_water_mat.shader = WATER_SHADER
+		_water_mat.set_shader_parameter("world_size", _map_bounds.size)
+		bg.material = _water_mat
 		add_child(bg)
 		print("[World] Background loaded — ", _bg_image.get_width(), "x", _bg_image.get_height())
 
@@ -268,8 +275,57 @@ func _build_navigation() -> void:
 					w = 1
 			_water_fine[fy * _water_w + fx] = w
 
+	_build_water_distance()
+
 	_nav_ready = true
 	print("[Nav] ", _gc, "x", _gr, " grid, ", _prects.size(), " obstacles")
+
+
+# Build a distance-to-water field (DIST_RES px/cell) via a two-pass chamfer transform.
+func _build_water_distance() -> void:
+	_dist_w = ceili(_map_bounds.size.x / DIST_RES)
+	_dist_h = ceili(_map_bounds.size.y / DIST_RES)
+	var n := _dist_w * _dist_h
+	_water_dist.resize(n)
+	var inf := 1e9
+	var scale := DIST_RES / WATER_RES  # water-mask cells per distance cell
+	for j in _dist_h:
+		for i in _dist_w:
+			var fi := mini(i * scale, _water_w - 1)
+			var fj := mini(j * scale, _water_h - 1)
+			_water_dist[j * _dist_w + i] = 0.0 if _water_fine[fj * _water_w + fi] == 1 else inf
+	# Forward pass (top-left → bottom-right)
+	for j in _dist_h:
+		for i in _dist_w:
+			var idx := j * _dist_w + i
+			if _water_dist[idx] == 0.0:
+				continue
+			var best: float = _water_dist[idx]
+			if i > 0:
+				best = minf(best, _water_dist[idx - 1] + 1.0)
+			if j > 0:
+				best = minf(best, _water_dist[idx - _dist_w] + 1.0)
+			if i > 0 and j > 0:
+				best = minf(best, _water_dist[idx - _dist_w - 1] + SQRT2)
+			if i < _dist_w - 1 and j > 0:
+				best = minf(best, _water_dist[idx - _dist_w + 1] + SQRT2)
+			_water_dist[idx] = best
+	# Backward pass (bottom-right → top-left)
+	for j in range(_dist_h - 1, -1, -1):
+		for i in range(_dist_w - 1, -1, -1):
+			var idx := j * _dist_w + i
+			if _water_dist[idx] == 0.0:
+				continue
+			var best: float = _water_dist[idx]
+			if i < _dist_w - 1:
+				best = minf(best, _water_dist[idx + 1] + 1.0)
+			if j < _dist_h - 1:
+				best = minf(best, _water_dist[idx + _dist_w] + 1.0)
+			if i < _dist_w - 1 and j < _dist_h - 1:
+				best = minf(best, _water_dist[idx + _dist_w + 1] + SQRT2)
+			if i > 0 and j < _dist_h - 1:
+				best = minf(best, _water_dist[idx + _dist_w - 1] + SQRT2)
+			_water_dist[idx] = best
 
 
 # ------------------------------------------------------------------ walkability / bounds
@@ -298,6 +354,41 @@ func get_water_depth(pos: Vector2) -> float:
 	var dx := absf(pos.x - cx) / cx
 	var dy := absf(pos.y - cy) / cy
 	return clampf(dx + dy - 1.0, 0.0, 1.0)
+
+
+func distance_to_water(pos: Vector2) -> float:
+	## Distance in world pixels from `pos` to the nearest water (0 if in water).
+	if not _nav_ready or _water_dist.is_empty():
+		return 0.0
+	var i := clampi(int(pos.x / DIST_RES), 0, _dist_w - 1)
+	var j := clampi(int(pos.y / DIST_RES), 0, _dist_h - 1)
+	return _water_dist[j * _dist_w + i] * DIST_RES
+
+
+func direction_to_water(pos: Vector2) -> Vector2:
+	## Normalized direction from `pos` toward the nearest water (ZERO if in water).
+	if not _nav_ready or _water_dist.is_empty():
+		return Vector2.ZERO
+	var i := clampi(int(pos.x / DIST_RES), 0, _dist_w - 1)
+	var j := clampi(int(pos.y / DIST_RES), 0, _dist_h - 1)
+	if _water_dist[j * _dist_w + i] == 0.0:
+		return Vector2.ZERO  # already in water — no outward direction
+	var ip := clampi(i + 1, 0, _dist_w - 1)
+	var im := clampi(i - 1, 0, _dist_w - 1)
+	var jp := clampi(j + 1, 0, _dist_h - 1)
+	var jm := clampi(j - 1, 0, _dist_h - 1)
+	var gx := _water_dist[j * _dist_w + ip] - _water_dist[j * _dist_w + im]
+	var gy := _water_dist[jp * _dist_w + i] - _water_dist[jm * _dist_w + i]
+	var dir := Vector2(-gx, -gy)  # toward decreasing distance = toward water
+	if dir.length_squared() < 0.0001:
+		return Vector2.ZERO
+	return dir.normalized()
+
+
+func set_water_highlight(pos: Vector2, radius: float) -> void:
+	if _water_mat:
+		_water_mat.set_shader_parameter("highlight_pos", pos / _map_bounds.size)
+		_water_mat.set_shader_parameter("highlight_radius", radius)
 
 
 func spawn_ripple(pos: Vector2) -> void:

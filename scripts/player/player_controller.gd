@@ -34,7 +34,13 @@ var _attack_cooldown: float  = 0.0
 var _channeling:     bool    = false
 var _current_tool:   int     = -1    # -1 = no tool (default)
 var wood:            int     = 0     # wood gathered (inventory)
+var fish:            int     = 0     # fish caught (inventory)
+var hunger:          float   = 100.0 # hunger meter (0-100)
+var _fish_timer:     float   = 0.0
+var _hunger_timer:   float   = 0.0
 var _nearby_tree:    Node    = null  # tree within chop range (axe equipped)
+var _near_water:     bool    = false # near/touching/inside water (fishing rod)
+var _water_dir:      Vector2 = Vector2.ZERO  # direction toward the nearest water
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
 
@@ -85,6 +91,9 @@ const ATTACK_COOLDOWN := 0.5
 const ATTACK_DAMAGE := 10.0
 const ATTACK_RANGE := 60.0
 const ATTACK_ARC := 1.2       # half-angle of the swing (radians)
+const FISH_RANGE := 90.0              # world px from water before fishing is allowed
+const WATER_HIGHLIGHT_RADIUS := 180.0 # water glow radius around the player
+const FISH_INTERVAL := 2.0            # seconds between each +1 fish while fishing
 const REGEN_DELAY := 5.0      # seconds of no damage before regen starts
 const REGEN_RATE := 10.0      # hp restored per second
 const INTERP_DELAY := 0.1     # render remote players this far in the past (s)
@@ -308,8 +317,11 @@ func _start_attack() -> void:
 	if _current_tool == 1:  # axe — only chops trees
 		_try_chop_tree()
 		return
+	if _current_tool == 5:  # fishing rod — only when near water
+		_try_fish()
+		return
 	if _is_channel_tool():
-		# Sustained action (dig/fish/water) — toggle and stay in it until interrupted.
+		# Sustained action (dig/water) — toggle and stay in it until interrupted.
 		_channeling = not _channeling
 		if _channeling:
 			_play_anim(ANIM_ATTACK[_facing_dir])
@@ -351,6 +363,39 @@ func _try_chop_tree() -> void:
 	_play_anim(ANIM_ATTACK[_facing_dir])
 
 
+func _try_fish() -> void:
+	if not _near_water:
+		_spawn_float_text("Need to be close to water to fish", Color(0.4, 0.8, 1.0))
+		return
+	# Face the water before casting.
+	if _water_dir != Vector2.ZERO:
+		_facing_dir = _get_dir_index(_water_dir)
+	if _channeling:
+		_channeling = false
+		_play_anim(ANIM_IDLE[_facing_dir])
+	else:
+		_channeling = true
+		_play_anim(ANIM_ATTACK[_facing_dir])
+
+
+func _catch_fish() -> void:
+	fish += 1
+	_spawn_float_text("+1 fish", Color(0.5, 0.8, 1.0))
+
+
+func _tick_hunger(delta: float) -> void:
+	_hunger_timer += delta
+	while _hunger_timer >= 1.0:
+		_hunger_timer -= 1.0
+		hunger -= 1.0
+		if hunger <= 0.0:
+			if fish > 0:
+				fish -= 1
+				hunger = 100.0
+			else:
+				hunger = 0.0
+
+
 func _on_tree_finished(_tree: Node) -> void:
 	# The tree finished being chopped — return to idle.
 	_channeling = false
@@ -389,6 +434,25 @@ func _update_nearby_tree() -> void:
 		if best != null:
 			best.set_highlighted(true)
 		_nearby_tree = best
+
+
+func _update_nearby_water() -> void:
+	# While the fishing rod is out, glow the water and record distance/direction.
+	var world := get_parent()
+	if _current_tool != 5 or world == null or not world.has_method("distance_to_water"):
+		_near_water = false
+		_water_dir = Vector2.ZERO
+		if world and world.has_method("set_water_highlight"):
+			world.set_water_highlight(global_position, 0.0)
+		return
+	var dist: float = world.distance_to_water(global_position)
+	_near_water = dist <= FISH_RANGE
+	if _near_water:
+		world.set_water_highlight(global_position, WATER_HIGHLIGHT_RADIUS)
+		_water_dir = world.direction_to_water(global_position)
+	else:
+		world.set_water_highlight(global_position, 0.0)
+		_water_dir = Vector2.ZERO
 
 
 func _spawn_float_text(text: String, color: Color) -> void:
@@ -646,10 +710,12 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
+	_tick_hunger(delta)
 
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 
 	_update_nearby_tree()
+	_update_nearby_water()
 
 	# While channeling (digging/fishing/watering/chopping), stand still until movement interrupts.
 	if _channeling:
@@ -660,6 +726,11 @@ func _physics_process(delta: float) -> void:
 			_channeling = false
 			_play_anim(ANIM_IDLE[_facing_dir])
 		else:
+			if _current_tool == 5:
+				_fish_timer += delta
+				while _fish_timer >= FISH_INTERVAL:
+					_fish_timer -= FISH_INTERVAL
+					_catch_fish()
 			velocity = Vector2.ZERO
 			return
 
@@ -730,6 +801,9 @@ func _physics_process(delta: float) -> void:
 		_facing_dir = idx
 		_play_anim(ANIM_WALK[(idx + WALK_ROW_OFFSET) % DIR_COUNT])
 	else:
+		# Face the water when idle with the fishing rod out and near water.
+		if _current_tool == 5 and _near_water and _water_dir != Vector2.ZERO:
+			_facing_dir = _get_dir_index(_water_dir)
 		_play_anim(ANIM_IDLE[_facing_dir])
 
 	# Only move when actually moving. Calling move_and_slide() while idle runs

@@ -2,6 +2,11 @@ shader_type canvas_item;
 // Water for the map's transparent edges: directional waves + specular glint + shoreline foam.
 // All procedural — one fragment shader, no extra textures, runs on the GPU.
 
+// Fishing highlight — a brightening glow on the water near a world-space point.
+uniform vec2 highlight_pos = vec2(0.0, 0.0);   // in UV space (0-1)
+uniform float highlight_radius = 0.0;          // in world pixels
+uniform vec2 world_size = vec2(7000.0, 4083.0);
+
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 345.45));
 	p += dot(p, p + 34.345);
@@ -53,6 +58,12 @@ void fragment() {
 		float shore = step(0.5, max(max(a0, a1), max(a2, a3)));
 		float foam = shore * (0.55 + 0.45 * sin(TIME * 2.5 + n * 8.0));
 		water = mix(water, vec3(0.82, 0.90, 0.92), foam * 0.55);
+
+		// Fishing highlight: brighten the water around the highlighted world point.
+		vec2 world_delta = (UV - highlight_pos) * world_size;
+		float hd = length(world_delta);
+		float glow = (1.0 - smoothstep(0.0, max(highlight_radius, 0.001), hd)) * step(0.5, highlight_radius);
+		water += vec3(0.20, 0.42, 0.58) * glow * 0.55;
 
 		COLOR = vec4(water, 1.0);
 	} else {

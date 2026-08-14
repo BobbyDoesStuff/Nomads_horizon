@@ -8,7 +8,9 @@ const ICON_FRAME := 460
 
 @onready var health_bar:  ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/HealthBar
 @onready var stamina_bar: ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/StaminaBar
+@onready var hunger_bar:  ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/HungerBar
 @onready var wood_label:  Label = $MarginContainer/HBoxContainer/LeftPanel/WoodLabel
+@onready var fish_label:  Label = $MarginContainer/HBoxContainer/LeftPanel/FishLabel
 @onready var hotbar:      HBoxContainer = $MarginContainer/HBoxContainer/CenterPanel/Hotbar
 @onready var chat_box:    Control = $ChatBox
 
@@ -144,7 +146,10 @@ func _process(_delta: float) -> void:
 	if local:
 		set_stamina(local.stamina, local.max_stamina)
 		set_health(local.health, local.max_health)
+		hunger_bar.max_value = 100.0
+		hunger_bar.value = local.hunger
 		wood_label.text = "Wood: %d" % local.wood
+		fish_label.text = "Fish: %d" % local.fish
 		if local._current_tool != _last_tool:
 			_last_tool = local._current_tool
 			_update_hotbar_selection()
