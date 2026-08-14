@@ -3,6 +3,8 @@ extends CanvasLayer
 
 const MAP_IMAGE_PATH := "res://assets/tiles/background.png"
 const WATER_MINIMAP_SHADER := preload("res://assets/shaders/water_minimap.gdshader")
+const TOOL_NAMES := ["", "sword", "axe", "pickaxe", "hammer", "showel", "fishingpole", "watercan", "shield"]
+const ICON_FRAME := 460
 
 @onready var health_bar:  ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/HealthBar
 @onready var stamina_bar: ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/StaminaBar
@@ -13,12 +15,15 @@ var _minimap:      Control       = null
 var _minimap_dot:  ColorRect     = null
 var _remote_dots:  Dictionary    = {}    # peer_id → ColorRect
 var _map_size:     Vector2       = Vector2.ZERO
+var _hotbar_styles: Array = []
+var _last_tool:     int   = -2
 
 
 func _ready() -> void:
 	chat_box.visible = false
 	chat_box.add_to_group("chat_box")
 	_build_minimap()
+	_build_hotbar()
 	_fix_hotbar_position()
 
 
@@ -26,7 +31,55 @@ func _fix_hotbar_position() -> void:
 	if hotbar:
 		var sz: Vector2 = get_viewport().get_visible_rect().size
 		hotbar.layout_mode = 0
-		hotbar.position = Vector2(sz.x / 2.0 - 120.0, sz.y - 58.0)
+		# Center on screen. The hotbar's parent (CenterPanel) is offset ~192px by
+		# the 180px left panel + 12px margin, so subtract it. 9 slots = 464px wide.
+		hotbar.position = Vector2(sz.x / 2.0 - 424.0, sz.y - 58.0)
+
+
+# Build 9 slots: empty hands + 8 tools, each with an icon.
+func _build_hotbar() -> void:
+	for child in hotbar.get_children():
+		child.queue_free()
+	_hotbar_styles.clear()
+	for i in TOOL_NAMES.size():
+		var slot := Panel.new()
+		slot.custom_minimum_size = Vector2(48, 48)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.15, 0.15, 0.2, 0.85)
+		style.set_border_width_all(2)
+		style.border_color = Color(0.35, 0.35, 0.45, 1)
+		slot.add_theme_stylebox_override("panel", style)
+		_hotbar_styles.append(style)
+
+		var icon := TextureRect.new()
+		icon.texture = _tool_icon(TOOL_NAMES[i])
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(icon)
+		hotbar.add_child(slot)
+	_update_hotbar_selection()
+
+
+func _tool_icon(tool: String) -> Texture2D:
+	var path := "res://assets/sprites/spr_idle_%s.png" % (tool if tool != "" else "none")
+	if not FileAccess.file_exists(path):
+		return null
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
+	var img := Image.new()
+	if img.load_png_from_buffer(file.get_buffer(file.get_length())) != OK:
+		return null
+	var region := img.get_region(Rect2i(0, 0, ICON_FRAME, ICON_FRAME))
+	return ImageTexture.create_from_image(region)
+
+
+func _update_hotbar_selection() -> void:
+	for i in _hotbar_styles.size():
+		var style: StyleBoxFlat = _hotbar_styles[i]
+		style.border_color = Color(1.0, 0.9, 0.3, 1) if (i - 1 == _last_tool) else Color(0.35, 0.35, 0.45, 1)
 
 
 # ------------------------------------------------------------------ minimap
@@ -90,6 +143,9 @@ func _process(_delta: float) -> void:
 	if local:
 		set_stamina(local.stamina, local.max_stamina)
 		set_health(local.health, local.max_health)
+		if local._current_tool != _last_tool:
+			_last_tool = local._current_tool
+			_update_hotbar_selection()
 
 	if _map_size == Vector2.ZERO:
 		return

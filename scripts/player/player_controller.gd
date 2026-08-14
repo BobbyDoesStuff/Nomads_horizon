@@ -31,7 +31,7 @@ var _bubble:         Label   = null
 var _bubble_timer:   Timer   = null
 var _attacking:      bool    = false
 var _attack_cooldown: float  = 0.0
-var _slash:          Line2D = null
+var _current_tool:   int     = -1    # -1 = no tool (default)
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
 
@@ -43,9 +43,9 @@ var _healthbar:          ProgressBar = null
 # labels — row 0 shows N(up), row 2 shows E(right), etc.
 #
 # Godot angle convention: 0=right(E), PI/2=down(S), PI=left(W), -PI/2=up(N)
-const SECTOR_TO_ROW := [2, 3, 4, 5, 6, 7, 0, 1]
+const SECTOR_TO_ROW := [6, 7, 0, 1, 2, 3, 4, 5]
 # sector:             0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
-# mapped (180 deg rot):2=E 3=SE 4=S 5=SW 6=W 7=NW 0=N 1=NE
+# mapped (no rotation):6=E 7=SE 0=S 1=SW 2=W 3=NW 4=N 5=NE
 
 const WALK_ROW_OFFSET := 0   # both sheets share the same rotation, no relative offset
 
@@ -57,15 +57,28 @@ const ANIM_IDLE := [
 	"idle_down", "idle_down_left", "idle_left", "idle_up_left",
 	"idle_up", "idle_up_right", "idle_right", "idle_down_right",
 ]
+const ANIM_ATTACK := [
+	"attack_down", "attack_down_left", "attack_left", "attack_up_left",
+	"attack_up", "attack_up_right", "attack_right", "attack_down_right",
+]
 
-const FRAME_W := 128
-const FRAME_H := 160
-const WALK_FRAMES := 8
+const FRAME_W := 460
+const FRAME_H := 460
+const WALK_FRAMES := 6
+const IDLE_FRAMES := 8
+const ATTACK_FRAMES := 6
 const DIR_COUNT   := 8
+# Sheet has 5 directions (down, down-left, left, up-left, up); the right side is mirrored.
+const DIR_ROW := [0, 1, 2, 3, 4, 3, 2, 1]
+const DIR_FLIP := [false, false, false, false, false, true, true, true]
+
+const SPRITE_SCALE := 0.4
+const SPRITE_FEET_Y := 200.0  # character feet offset within the 460px frame (from centre)
+const TOOLS := ["sword", "axe", "pickaxe", "hammer", "showel", "fishingpole", "watercan", "shield"]
 
 # Inverse of SECTOR_TO_ROW — maps a facing row back to an on-screen direction.
-const ROW_TO_SECTOR := [6, 7, 0, 1, 2, 3, 4, 5]
-const ATTACK_DURATION := 0.25
+const ROW_TO_SECTOR := [2, 3, 4, 5, 6, 7, 0, 1]
+const ATTACK_DURATION := 0.45
 const ATTACK_COOLDOWN := 0.5
 const ATTACK_DAMAGE := 10.0
 const ATTACK_RANGE := 60.0
@@ -87,7 +100,6 @@ func _ready() -> void:
 	_setup_sprite_frames()
 	_setup_name_label()
 	_setup_chat_bubble()
-	_setup_attack()
 	_setup_healthbar()
 	_setup_camera()
 
@@ -119,39 +131,87 @@ func _setup_camera() -> void:
 # ------------------------------------------------------------------ sprite setup
 func _setup_sprite_frames() -> void:
 	var sf := SpriteFrames.new()
-	var walk_img := _load_png("res://assets/sprites/spr_normal_walk.png")
-	var idle_img := _load_png("res://assets/sprites/spr_normal_idle.png")
-	if walk_img == null or idle_img == null:
+	var tool := "none"
+	if _current_tool >= 0 and _current_tool < TOOLS.size():
+		tool = TOOLS[_current_tool]
+	var walk_path := "res://assets/sprites/spr_walk_%s.png" % tool
+	var idle_path := "res://assets/sprites/spr_idle_%s.png" % tool
+	if not FileAccess.file_exists(walk_path):
+		walk_path = "res://assets/sprites/spr_walk_none.png"
+	if not FileAccess.file_exists(idle_path):
+		idle_path = "res://assets/sprites/spr_idle_none.png"
+	var walk_img := _load_png(walk_path)
+	var idle_img := _load_png(idle_path)
+	var attack_img := _load_png("res://assets/sprites/spr_attack_%s.png" % _attack_sheet())
+	if walk_img == null or idle_img == null or attack_img == null:
 		push_error("[Player] Missing sprite sheets")
 		return
 	var walk_tex := ImageTexture.create_from_image(walk_img)
 	var idle_tex := ImageTexture.create_from_image(idle_img)
+	var attack_tex := ImageTexture.create_from_image(attack_img)
 
 	for row in DIR_COUNT:
+		var sheet_row: int = DIR_ROW[row]  # character sheet row (direction)
+
 		sf.add_animation(ANIM_WALK[row])
 		sf.set_animation_speed(ANIM_WALK[row], 10.0)
 		sf.set_animation_loop(ANIM_WALK[row], true)
-		for col in WALK_FRAMES:
+		for f in WALK_FRAMES:
 			var at := AtlasTexture.new()
 			at.atlas = walk_tex
-			at.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
+			at.region = Rect2(f * FRAME_W, sheet_row * FRAME_H, FRAME_W, FRAME_H)
 			sf.add_frame(ANIM_WALK[row], at)
 
 		sf.add_animation(ANIM_IDLE[row])
 		sf.set_animation_speed(ANIM_IDLE[row], 4.0)
 		sf.set_animation_loop(ANIM_IDLE[row], true)
-		var at := AtlasTexture.new()
-		at.atlas = idle_tex
-		at.region = Rect2(0, row * FRAME_H, FRAME_W, FRAME_H)
-		sf.add_frame(ANIM_IDLE[row], at)
+		for f in IDLE_FRAMES:
+			var at := AtlasTexture.new()
+			at.atlas = idle_tex
+			at.region = Rect2(f * FRAME_W, sheet_row * FRAME_H, FRAME_W, FRAME_H)
+			sf.add_frame(ANIM_IDLE[row], at)
+
+		sf.add_animation(ANIM_ATTACK[row])
+		sf.set_animation_speed(ANIM_ATTACK[row], 11.0)
+		sf.set_animation_loop(ANIM_ATTACK[row], false)
+		for f in ATTACK_FRAMES:
+			var at := AtlasTexture.new()
+			at.atlas = attack_tex
+			at.region = Rect2(f * FRAME_W, sheet_row * FRAME_H, FRAME_W, FRAME_H)
+			sf.add_frame(ANIM_ATTACK[row], at)
 
 	var sprite: AnimatedSprite2D = $AnimatedSprite2D
 	sprite.sprite_frames = sf
+	sprite.scale = Vector2(SPRITE_SCALE, SPRITE_SCALE)
+	sprite.position = Vector2(0, -SPRITE_FEET_Y * SPRITE_SCALE)
+	sprite.animation_finished.connect(_on_animation_finished)
 	_current_anim = ANIM_IDLE[0]
 	sprite.play(_current_anim)
 	_submerge_mat = ShaderMaterial.new()
 	_submerge_mat.shader = SUBMERGE_SHADER
 	sprite.material = _submerge_mat
+
+
+func _on_animation_finished() -> void:
+	_attacking = false
+	_play_anim(ANIM_IDLE[_facing_dir])
+
+
+func _set_tool(index: int) -> void:
+	if index == _current_tool:
+		return
+	_current_tool = index
+	_setup_sprite_frames()
+	_play_anim(ANIM_IDLE[_facing_dir])
+
+
+func _attack_sheet() -> String:
+	match _current_tool:
+		-1, 0: return "sword"     # empty hands or sword → sword swing
+		1: return "axe"
+		2: return "pickaxe"
+		3: return "hammer"
+		_: return "swing"         # showel, fishingpole, watercan, shield
 
 
 func _load_png(path: String) -> Image:
@@ -174,7 +234,7 @@ func _setup_name_label() -> void:
 		label.text = "P" + label.text
 	# Center the name horizontally over the player's head.
 	label.size = Vector2(120, 18)
-	label.position = Vector2(-60, -156)
+	label.position = Vector2(-60, -170)
 
 
 func _setup_chat_bubble() -> void:
@@ -201,27 +261,6 @@ func _on_bubble_timeout() -> void:
 		_bubble.visible = false
 
 
-func _setup_attack() -> void:
-	_slash = Line2D.new()
-	_slash.name = "Slash"
-	_slash.width = 6.0
-	_slash.default_color = Color(1.0, 0.95, 0.6, 1.0)
-	_slash.joint_mode = Line2D.LINE_JOINT_ROUND
-	_slash.begin_cap_mode = Line2D.LINE_CAP_ROUND
-	_slash.end_cap_mode = Line2D.LINE_CAP_ROUND
-	_slash.position = Vector2(0, -80)
-	_slash.visible = false
-	_slash.z_index = 5
-	# Arc swept from -1 to +1 rad, radius 55.
-	var pts := PackedVector2Array()
-	var steps := 12
-	for i in steps + 1:
-		var a: float = -1.0 + 2.0 * float(i) / float(steps)
-		pts.append(Vector2(cos(a), sin(a)) * 55.0)
-	_slash.points = pts
-	add_child(_slash)
-
-
 func _facing_vector() -> Vector2:
 	return Vector2.from_angle(ROW_TO_SECTOR[_facing_dir] * TAU / 8.0)
 
@@ -244,26 +283,7 @@ func play_attack_animation(facing: int = -1) -> void:
 
 
 func _play_attack_visual() -> void:
-	var facing := _facing_vector()
-	_slash.rotation = facing.angle()
-	_slash.modulate.a = 1.0
-	_slash.visible = true
-
-	var sprite: AnimatedSprite2D = $AnimatedSprite2D
-	var base_pos: Vector2 = sprite.position
-
-	# Quick lunge toward the facing direction and back.
-	var lunge := create_tween()
-	lunge.tween_property(sprite, "position", base_pos + facing * 26.0, 0.05)
-	lunge.tween_property(sprite, "position", base_pos, 0.10)
-
-	# Fade the slash arc out over the attack, then finish.
-	var fade := create_tween()
-	fade.tween_property(_slash, "modulate:a", 0.0, ATTACK_DURATION)
-	fade.tween_callback(func() -> void:
-		_slash.visible = false
-		_attacking = false
-	)
+	_play_anim(ANIM_ATTACK[_facing_dir])
 
 
 func _sync_attack() -> void:
@@ -285,7 +305,7 @@ func _setup_healthbar() -> void:
 	_healthbar.value = health
 	_healthbar.show_percentage = false
 	_healthbar.size = Vector2(60, 8)
-	_healthbar.position = Vector2(-30, -138)
+	_healthbar.position = Vector2(-30, -152)
 	_healthbar.visible = true
 	_healthbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fill := StyleBoxFlat.new()
@@ -327,7 +347,7 @@ func _spawn_damage_number(amount: float) -> void:
 	var label := Label.new()
 	label.text = "-%d" % int(round(amount))
 	label.size = Vector2(60, 22)
-	label.position = Vector2(-30 + randf_range(-12.0, 12.0), -180)
+	label.position = Vector2(-30 + randf_range(-12.0, 12.0), -195)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 18)
@@ -416,9 +436,10 @@ func _get_dir_index(vec: Vector2) -> int:
 
 
 func _play_anim(anim: String) -> void:
+	var sprite: AnimatedSprite2D = $AnimatedSprite2D
+	sprite.flip_h = bool(DIR_FLIP[_facing_dir])
 	if anim != _current_anim:
 		_current_anim = anim
-		var sprite: AnimatedSprite2D = $AnimatedSprite2D
 		if sprite.sprite_frames and sprite.sprite_frames.has_animation(anim):
 			sprite.play(anim)
 
@@ -489,10 +510,9 @@ func _physics_process(delta: float) -> void:
 
 	_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
 
-	# While attacking, stand still and let the animation play.
+	# While attacking, stand still and let the attack animation play.
 	if _attacking:
 		velocity = Vector2.ZERO
-		_play_anim(ANIM_IDLE[_facing_dir])
 		return
 
 	# ---- local / authority ----
@@ -633,6 +653,11 @@ func _on_path_ready(path: Array) -> void:
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
+	# Tool selection: number keys 1-9 (1 = empty hands, 2-9 = tools).
+	if event is InputEventKey and event.pressed and not event.echo:
+		if not _is_typing():
+			if event.keycode >= KEY_1 and event.keycode <= KEY_9:
+				_set_tool(event.keycode - KEY_2)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if not _is_typing():
 			_start_attack()

@@ -15,7 +15,7 @@ void vertex() {
 }
 
 void fragment() {
-	float water_line = 80.0 - 160.0 * submersion;
+	float water_line = 200.0 - 430.0 * submersion;
 	// Fully hidden once submerged, so the tilted line can't leave a top sliver.
 	if (submersion >= 1.0 || local_y - water_slope * local_x > water_line) {
 		discard;
