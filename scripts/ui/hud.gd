@@ -156,8 +156,7 @@ func _input(event: InputEvent) -> void:
 			var wy: float = (local.y / _minimap.size.y) * _map_size.y
 			var player := _get_local_player()
 			if player:
-				player._target = Vector2(wx, wy)
-				player._target_set = true
+				player.move_to(Vector2(wx, wy))
 			get_viewport().set_input_as_handled()
 
 

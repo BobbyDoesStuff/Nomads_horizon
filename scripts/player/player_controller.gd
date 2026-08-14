@@ -12,6 +12,10 @@ var stamina: float = 0.0
 var health: float = 0.0
 
 var _target:         Vector2
+var _path:           Array   = []
+var _path_idx:       int     = 0
+var _stuck_time:     float   = 0.0
+var _stuck_at:       Vector2
 var _target_set:     bool    = false
 var _snap_pos:       Array[Vector2] = []
 var _snap_time:      Array[float]   = []
@@ -462,10 +466,38 @@ func _physics_process(delta: float) -> void:
 	var dir := Vector2.ZERO
 
 	if input != Vector2.ZERO:
+		# WASD — cancel any path and move directly.
+		_path.clear()
 		_target = global_position
 		dir = input
 		velocity = dir * move_speed
+	elif not _path.is_empty() and _path_idx < _path.size():
+		# Follow grid path waypoints.
+		var wp: Vector2 = _path[_path_idx]
+		var to_wp: Vector2 = wp - global_position
+		var d: float = to_wp.length()
+		if global_position.distance_to(_stuck_at) < 16.0:
+			_stuck_time += delta
+		else:
+			_stuck_time = 0.0
+			_stuck_at = global_position
+		if d < 12.0 or _stuck_time > 1.0:
+			_stuck_time = 0.0
+			_stuck_at = global_position
+			_path_idx += 1
+			if _path_idx >= _path.size():
+				_path.clear()
+				_target = global_position
+				velocity = Vector2.ZERO
+			else:
+				var nwp: Vector2 = _path[_path_idx]
+				dir = (nwp - global_position).normalized()
+				velocity = dir * move_speed
+		else:
+			dir = to_wp / d
+			velocity = dir * minf(move_speed, d / delta)
 	else:
+		# Direct movement toward target (fallback while path computes / no path).
 		var to_target := _target - global_position
 		var dist := to_target.length()
 		# Threshold must be >1 frame of movement to catch WASD release,
@@ -524,6 +556,25 @@ func _is_click_on_minimap(screen_pos: Vector2) -> bool:
 	       screen_pos.y >= mm_top  and screen_pos.y <= mm_bottom
 
 
+func move_to(world_pos: Vector2) -> void:
+	_target = world_pos
+	_target_set = true
+	_path.clear()
+	_path_idx = 0
+	_stuck_time = 0.0
+	_stuck_at = global_position
+	var world := get_parent()
+	if world and world.has_method("request_path"):
+		world.request_path(global_position, world_pos, _on_path_ready)
+
+
+func _on_path_ready(path: Array) -> void:
+	_path = path
+	_path_idx = 0
+	_stuck_time = 0.0
+	_stuck_at = global_position
+
+
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
@@ -536,8 +587,7 @@ func _input(event: InputEvent) -> void:
 		var click_pos := get_global_mouse_position()
 		var world := get_parent()
 		if world and world.has_method("is_in_bounds") and world.is_in_bounds(click_pos):
-			_target = click_pos
-			_target_set = true
+			move_to(click_pos)
 	if event.is_action_pressed("ui_cancel"):
 		# Escape closes chat first if it's open; otherwise exit to menu.
 		var chat: Control = get_tree().get_first_node_in_group("chat_box")
