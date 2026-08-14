@@ -8,6 +8,8 @@ extends CharacterBody2D
 @export var stamina_regen: float = 20.0   # per second while not sprinting
 @export var max_health: float = 100.0
 
+const SUBMERGE_SHADER := preload("res://assets/shaders/player_submerge.gdshader")
+
 var stamina: float = 0.0
 var health: float = 0.0
 
@@ -17,6 +19,7 @@ var _path_idx:       int     = 0
 var _stuck_time:     float   = 0.0
 var _stuck_at:       Vector2
 var _ripple_timer:   float   = 0.0
+var _submerge_mat:   ShaderMaterial = null
 var _target_set:     bool    = false
 var _snap_pos:       Array[Vector2] = []
 var _snap_time:      Array[float]   = []
@@ -146,6 +149,9 @@ func _setup_sprite_frames() -> void:
 	sprite.sprite_frames = sf
 	_current_anim = ANIM_IDLE[0]
 	sprite.play(_current_anim)
+	_submerge_mat = ShaderMaterial.new()
+	_submerge_mat.shader = SUBMERGE_SHADER
+	sprite.material = _submerge_mat
 
 
 func _load_png(path: String) -> Image:
@@ -350,6 +356,13 @@ func _process(_delta: float) -> void:
 	if _healthbar:
 		_healthbar.max_value = max_health
 		_healthbar.value = health
+	# Water submersion: hide the body bottom-up based on depth.
+	if _submerge_mat:
+		var world := get_parent()
+		var depth := 0.0
+		if world and world.has_method("get_water_depth"):
+			depth = world.get_water_depth(global_position)
+		_submerge_mat.set_shader_parameter("submersion", depth)
 
 
 func _do_attack_hit() -> void:
@@ -544,9 +557,18 @@ func _physics_process(delta: float) -> void:
 		global_position.x = clampf(global_position.x, 0, world._map_bounds.size.x)
 		global_position.y = clampf(global_position.y, 0, world._map_bounds.size.y)
 
-	# Water ripple effect while stepping over the transparent water edges.
-	if world and world.has_method("is_water") and world.is_water(global_position):
-		if velocity.length_squared() > 25.0:
+	# Water: ripples while wading, and a persistent circle when fully submerged.
+	if world and world.has_method("get_water_depth"):
+		var water_depth: float = world.get_water_depth(global_position)
+		if water_depth >= 0.85:
+			# Fully submerged — ripple circles mark the spot.
+			_ripple_timer += delta
+			if _ripple_timer >= 0.4:
+				_ripple_timer = 0.0
+				if world.has_method("spawn_ripple"):
+					world.spawn_ripple(global_position)
+		elif water_depth > 0.0 and velocity.length_squared() > 25.0:
+			# Wading — ripples only while moving.
 			_ripple_timer += delta
 			if _ripple_timer >= 0.25:
 				_ripple_timer = 0.0

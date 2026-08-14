@@ -260,6 +260,19 @@ func is_water(pos: Vector2) -> bool:
 	return _water[gy][gx]
 
 
+func get_water_depth(pos: Vector2) -> float:
+	if not _nav_ready:
+		return 0.0
+	if not is_water(pos):
+		return 0.0
+	# Scaled L1 distance to the rhombus boundary: 0 on the shore, 1 at the corners.
+	var cx := _map_bounds.size.x / 2.0
+	var cy := _map_bounds.size.y / 2.0
+	var dx := absf(pos.x - cx) / cx
+	var dy := absf(pos.y - cy) / cy
+	return clampf(dx + dy - 1.0, 0.0, 1.0)
+
+
 func spawn_ripple(pos: Vector2) -> void:
 	var ripple: Node2D = RIPPLE_SCRIPT.new() as Node2D
 	ripple.position = pos
