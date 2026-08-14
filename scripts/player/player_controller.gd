@@ -509,7 +509,7 @@ func _update_build_ghost() -> void:
 	_ghost.flip_h = _build_flip_h
 	_ghost.flip_v = _build_flip_v
 	var grid: Vector2i = bm.grid_coords(get_global_mouse_position())
-	_ghost.global_position = bm.block_anchor(grid, _build_layer)
+	_ghost.global_position = bm.block_sprite_pos(grid, _build_layer)
 
 
 func _place_build_block() -> void:

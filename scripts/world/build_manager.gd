@@ -1,5 +1,6 @@
 extends Node2D
 ## Build manager — places isometric cube blocks on a grid, stacking into layers.
+## Blocks are added to the world (game_world) so they y-sort correctly back-to-front.
 
 const BLOCK_SHEET := "res://assets/sprites/blocks_cubes.png"
 const TILE_SIZE := 256
@@ -8,8 +9,9 @@ const TILE_COUNT := 60            # 10 cols x 6 rows
 const HALF_W := 128.0             # half the diamond's horizontal diagonal
 const HALF_H := 64.0              # half the diamond's vertical diagonal
 const LAYER_OFFSET_Y := -128.0    # vertical offset between stacked layers
+const FOOTPRINT_LIFT := -64.0     # cube footprint sits 64px below the tile centre
 
-var _blocks: Dictionary = {}      # Vector2i(grid) -> Array[Sprite2D] (one per layer)
+var _blocks: Dictionary = {}      # Vector2i(grid) -> Array[Node2D] (one per layer)
 var _textures: Dictionary = {}    # tile index -> Texture2D
 
 
@@ -40,12 +42,17 @@ func grid_coords(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(gx), int(gy))
 
 
-func block_anchor(grid: Vector2i, layer: int) -> Vector2:
-	## World position of a block's anchor (footprint centre) for a cell + layer.
+func block_anchor(grid: Vector2i, layer: int = 0) -> Vector2:
+	## Footprint point of a cell (layer 0), or the cell offset by `layer`.
 	return Vector2(
 		(grid.x - grid.y) * HALF_W,
 		(grid.x + grid.y) * HALF_H + layer * LAYER_OFFSET_Y
 	)
+
+
+func block_sprite_pos(grid: Vector2i, layer: int) -> Vector2:
+	## World position of a block sprite's centre (footprint + elevation + lift).
+	return block_anchor(grid, 0) + Vector2(0, FOOTPRINT_LIFT + layer * LAYER_OFFSET_Y)
 
 
 func place_block(world_pos: Vector2, layer: int, tile: int = DEFAULT_TILE, flip_h: bool = false, flip_v: bool = false) -> void:
@@ -53,16 +60,23 @@ func place_block(world_pos: Vector2, layer: int, tile: int = DEFAULT_TILE, flip_
 	var tex := get_block_texture(tile)
 	if tex == null:
 		return
+
+	# Wrapper node sits on the footprint (used as the y-sort key); the sprite
+	# child carries the visual elevation, so stacked blocks keep the same sort Y.
+	var node := Node2D.new()
+	node.position = block_anchor(grid, 0)
 	var sprite := Sprite2D.new()
 	sprite.texture = tex
 	sprite.centered = true
 	sprite.flip_h = flip_h
 	sprite.flip_v = flip_v
-	sprite.position = block_anchor(grid, layer)
-	add_child(sprite)
+	sprite.position = Vector2(0, FOOTPRINT_LIFT + layer * LAYER_OFFSET_Y)
+	node.add_child(sprite)
+
+	get_parent().add_child(node)  # add to the y-sorted world, not this manager
 	if not _blocks.has(grid):
 		_blocks[grid] = []
-	_blocks[grid].append(sprite)
+	_blocks[grid].append(node)
 
 
 func _load_image(path: String) -> Image:
