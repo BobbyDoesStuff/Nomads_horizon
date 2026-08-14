@@ -130,7 +130,7 @@ func _setup_camera() -> void:
 
 # ------------------------------------------------------------------ sprite setup
 func _setup_sprite_frames() -> void:
-	var sf := _build_frames("none", "sword", false)
+	var sf := _build_frames("none", "sword", false, 0)
 	if sf == null:
 		push_error("[Player] Missing sprite sheets")
 		return
@@ -145,7 +145,7 @@ func _setup_sprite_frames() -> void:
 
 
 # Build the SpriteFrames for a tool (pure — runs on a background thread).
-func _build_frames(tool: String, attack_sheet: String, channel: bool) -> SpriteFrames:
+func _build_frames(tool: String, attack_sheet: String, loop_attack: bool, frame_count: int) -> SpriteFrames:
 	var sf := SpriteFrames.new()
 	var walk_path := "res://assets/sprites/spr_walk_%s.png" % tool
 	var idle_path := "res://assets/sprites/spr_idle_%s.png" % tool
@@ -162,6 +162,8 @@ func _build_frames(tool: String, attack_sheet: String, channel: bool) -> SpriteF
 	var idle_tex := ImageTexture.create_from_image(idle_img)
 	var attack_tex := ImageTexture.create_from_image(attack_img)
 	var attack_frames := attack_img.get_width() / FRAME_W
+	if frame_count > 0:
+		attack_frames = frame_count
 
 	for row in DIR_COUNT:
 		var sheet_row: int = DIR_ROW[row]  # character sheet row (direction)
@@ -186,7 +188,7 @@ func _build_frames(tool: String, attack_sheet: String, channel: bool) -> SpriteF
 
 		sf.add_animation(ANIM_ATTACK[row])
 		sf.set_animation_speed(ANIM_ATTACK[row], 11.0)
-		sf.set_animation_loop(ANIM_ATTACK[row], channel)
+		sf.set_animation_loop(ANIM_ATTACK[row], loop_attack)
 		for f in attack_frames:
 			var at := AtlasTexture.new()
 			at.atlas = attack_tex
@@ -206,6 +208,8 @@ func _apply_frames(sf: SpriteFrames) -> void:
 
 
 func _on_animation_finished() -> void:
+	if _channeling:
+		return  # sustained action reached its "hold" frame — stay there
 	_attacking = false
 	_play_anim(ANIM_IDLE[_facing_dir])
 
@@ -219,11 +223,11 @@ func _set_tool(index: int) -> void:
 	if index >= 0 and index < TOOLS.size():
 		tool = TOOLS[index]
 	var attack_sheet := _attack_sheet()
-	WorkerThreadPool.add_task(_build_frames_task.bind(tool, attack_sheet, index, _is_channel_tool()))
+	WorkerThreadPool.add_task(_build_frames_task.bind(tool, attack_sheet, index, _action_loop(), _action_frame_count()))
 
 
-func _build_frames_task(tool: String, attack_sheet: String, index: int, channel: bool) -> void:
-	var sf := _build_frames(tool, attack_sheet, channel)
+func _build_frames_task(tool: String, attack_sheet: String, index: int, loop_attack: bool, frame_count: int) -> void:
+	var sf := _build_frames(tool, attack_sheet, loop_attack, frame_count)
 	_apply_frames_deferred.call_deferred(sf, index)
 
 
@@ -316,6 +320,16 @@ func _start_attack() -> void:
 
 func _is_channel_tool() -> bool:
 	return _current_tool >= 4 and _current_tool <= 6  # showel, fishingpole, watercan
+
+
+func _action_loop() -> bool:
+	return _current_tool == 4  # showel (digging) loops; fish/water play once and hold
+
+
+func _action_frame_count() -> int:
+	if _current_tool == 5:  # fishing: stop after the cast, hold the rod out
+		return 6  # full cast — freeze on the final frame (chord stretched in the water)
+	return 0  # auto-detect from sheet width
 
 
 # Called by remote players via RPC to replay this player's attack.
