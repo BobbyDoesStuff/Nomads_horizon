@@ -280,27 +280,26 @@ func _remove_player(peer_id: int) -> void:
 
 # ------------------------------------------------------------------ position + facing sync
 @rpc("any_peer", "call_remote", "unreliable")
-func recv_position(peer_id: int, pos: Vector2, facing: int = 0) -> void:
+func recv_position(peer_id: int, pos: Vector2, vel: Vector2, facing: int = 0) -> void:
 	if not NetworkManager.is_server:
 		return
 	var p := get_node_or_null(str(peer_id))
 	if p:
-		p._remote_pos = pos
+		p.add_snapshot(pos)
+		p._remote_vel = vel
 		p._facing_dir = facing
-	_broadcast_position.rpc(peer_id, pos, facing)
+	_broadcast_position.rpc(peer_id, pos, vel, facing)
 
 
 @rpc("authority", "call_remote", "unreliable")
-func _broadcast_position(peer_id: int, pos: Vector2, facing: int = 0) -> void:
+func _broadcast_position(peer_id: int, pos: Vector2, vel: Vector2, facing: int = 0) -> void:
 	if peer_id == multiplayer.get_unique_id():
 		return
 	var p := get_node_or_null(str(peer_id))
 	if p:
-		p._remote_pos = pos
+		p.add_snapshot(pos)
+		p._remote_vel = vel
 		p._facing_dir = facing
-	if _remote_players.has(peer_id):
-		_remote_players[peer_id]._remote_pos = pos
-		_remote_players[peer_id]._facing_dir = facing
 
 
 # ------------------------------------------------------------------ attack sync

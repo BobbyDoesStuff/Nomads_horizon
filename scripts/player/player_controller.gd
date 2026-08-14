@@ -13,7 +13,9 @@ var health: float = 0.0
 
 var _target:         Vector2
 var _target_set:     bool    = false
-var _remote_pos:     Vector2
+var _snap_pos:       Array[Vector2] = []
+var _snap_time:      Array[float]   = []
+var _remote_vel:     Vector2
 var _sync_timer:     float   = 0.0
 var _facing_dir:     int     = 0       # 0-7, remembered during idle
 var _current_anim:   String  = ""
@@ -63,10 +65,12 @@ const ATTACK_RANGE := 60.0
 const ATTACK_ARC := 1.2       # half-angle of the swing (radians)
 const REGEN_DELAY := 5.0      # seconds of no damage before regen starts
 const REGEN_RATE := 10.0      # hp restored per second
+const INTERP_DELAY := 0.1     # render remote players this far in the past (s)
+const SNAP_LIFETIME := 1.0    # discard snapshots older than this (s)
 
 
 func _ready() -> void:
-	_remote_pos = global_position
+	add_snapshot(global_position)
 	await get_tree().process_frame
 	_target = global_position
 	_target_set = true
@@ -373,16 +377,44 @@ func _tell_server_ready() -> void:
 	print("[Player] Warning: could not send ready signal to server")
 
 
+# ------------------------------------------------------------------ snapshot interpolation
+func add_snapshot(pos: Vector2) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	_snap_pos.append(pos)
+	_snap_time.append(now)
+	# Prune old snapshots, keeping at least two for interpolation.
+	var cutoff := now - SNAP_LIFETIME
+	while _snap_pos.size() > 2 and _snap_time[0] < cutoff:
+		_snap_pos.pop_front()
+		_snap_time.pop_front()
+
+
+func _interpolate_position() -> Vector2:
+	if _snap_pos.is_empty():
+		return global_position
+	var render_time := Time.get_ticks_msec() / 1000.0 - INTERP_DELAY
+	if _snap_pos.size() == 1 or render_time <= _snap_time[0]:
+		return _snap_pos[0]
+	if render_time >= _snap_time[-1]:
+		return _snap_pos[-1]
+	for i in _snap_pos.size() - 1:
+		if render_time <= _snap_time[i + 1]:
+			var t0 := _snap_time[i]
+			var t1 := _snap_time[i + 1]
+			var f := (render_time - t0) / (t1 - t0)
+			return _snap_pos[i].lerp(_snap_pos[i + 1], f)
+	return _snap_pos[-1]
+
+
 # ------------------------------------------------------------------ main loop
 func _physics_process(delta: float) -> void:
 	if not _target_set:
 		return
 
 	if not is_multiplayer_authority():
-		# Remote player — interpolate, use synced _facing_dir
-		global_position = global_position.lerp(_remote_pos, 0.25)
-		var moving := _remote_pos.distance_to(global_position) > 4.0
-		if moving:
+		# Remote player — render the interpolated position from the snapshot buffer.
+		global_position = _interpolate_position()
+		if _remote_vel.length_squared() > 25.0:
 			_play_anim(ANIM_WALK[(_facing_dir + WALK_ROW_OFFSET) % DIR_COUNT])
 		else:
 			_play_anim(ANIM_IDLE[_facing_dir])
@@ -456,9 +488,9 @@ func _physics_process(delta: float) -> void:
 		_sync_timer = 0.0
 		if world and world.has_method("recv_position"):
 			if NetworkManager.is_server:
-				world._broadcast_position.rpc(name.to_int(), global_position, _facing_dir)
+				world._broadcast_position.rpc(name.to_int(), global_position, velocity, _facing_dir)
 			else:
-				world.recv_position.rpc_id(1, multiplayer.get_unique_id(), global_position, _facing_dir)
+				world.recv_position.rpc_id(1, multiplayer.get_unique_id(), global_position, velocity, _facing_dir)
 
 
 # ------------------------------------------------------------------ input
