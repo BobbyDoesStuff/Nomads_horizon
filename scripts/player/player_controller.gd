@@ -34,11 +34,12 @@ var _attack_cooldown: float  = 0.0
 var _channeling:     bool    = false
 var _current_tool:   int     = -1    # -1 = no tool (default)
 var wood:            int     = 0     # wood gathered (inventory)
+var stone:           int     = 0     # stone gathered (inventory)
 var fish:            int     = 0     # fish caught (inventory)
 var hunger:          float   = 100.0 # hunger meter (0-100)
 var _fish_timer:     float   = 0.0
 var _hunger_timer:   float   = 0.0
-var _nearby_tree:    Node    = null  # tree within chop range (axe equipped)
+var _nearby_resource: Node   = null  # resource node in range (axe/pickaxe equipped)
 var _near_water:     bool    = false # near/touching/inside water (fishing rod)
 var _water_dir:      Vector2 = Vector2.ZERO  # direction toward the nearest water
 var _time_since_damage: float      = 0.0
@@ -229,7 +230,7 @@ func _on_animation_finished() -> void:
 func _set_tool(index: int) -> void:
 	if index == _current_tool:
 		return
-	_cancel_chop()  # stop chopping before switching away from the axe
+	_cancel_harvest()  # stop harvesting before switching tools
 	_current_tool = index
 	_channeling = false  # switching tools interrupts any sustained action
 	var tool := "none"
@@ -314,8 +315,8 @@ func _facing_vector() -> Vector2:
 
 
 func _start_attack() -> void:
-	if _current_tool == 1:  # axe — only chops trees
-		_try_chop_tree()
+	if _current_tool == 1 or _current_tool == 2:  # axe / pickaxe — harvest resources
+		_try_harvest()
 		return
 	if _current_tool == 5:  # fishing rod — only when near water
 		_try_fish()
@@ -342,7 +343,7 @@ func _is_channel_tool() -> bool:
 
 
 func _action_loop() -> bool:
-	return _current_tool == 4 or _current_tool == 1  # showel (dig) + axe (chop) loop their swing
+	return _current_tool == 4 or _current_tool == 1 or _current_tool == 2  # showel + axe + pickaxe loop their swing
 
 
 func _action_frame_count() -> int:
@@ -351,15 +352,24 @@ func _action_frame_count() -> int:
 	return 0  # auto-detect from sheet width
 
 
-# ------------------------------------------------------------------ tree chopping
-func _try_chop_tree() -> void:
-	if _nearby_tree == null or not is_instance_valid(_nearby_tree):
-		_spawn_float_text("Need to be next to a tree to cut", Color(1.0, 0.9, 0.4))
+# ------------------------------------------------------------------ resource harvesting
+func _tool_resource() -> String:
+	match _current_tool:
+		1: return "wood"   # axe
+		2: return "stone"  # pickaxe
+		_: return ""
+
+
+func _try_harvest() -> void:
+	var wanted := _tool_resource()
+	if _nearby_resource == null or not is_instance_valid(_nearby_resource):
+		var msg := "Need to be next to a tree to cut" if wanted == "wood" else "Need to be next to a stone to mine"
+		_spawn_float_text(msg, Color(1.0, 0.9, 0.4))
 		return
 	if _channeling:
-		return  # already chopping
+		return  # already harvesting
 	_channeling = true
-	_nearby_tree.start_chop(self)
+	_nearby_resource.start_harvest(self)
 	_play_anim(ANIM_ATTACK[_facing_dir])
 
 
@@ -396,44 +406,47 @@ func _tick_hunger(delta: float) -> void:
 				hunger = 0.0
 
 
-func _on_tree_finished(_tree: Node) -> void:
-	# The tree finished being chopped — return to idle.
+func _on_resource_finished(_node: Node) -> void:
+	# The resource node finished being harvested — return to idle.
 	_channeling = false
-	_nearby_tree = null
+	_nearby_resource = null
 	_play_anim(ANIM_IDLE[_facing_dir])
 
 
-func add_wood(amount: int) -> void:
-	wood += amount
+func add_resource(type: String, amount: int) -> void:
+	match type:
+		"wood": wood += amount
+		"stone": stone += amount
 
 
-func _cancel_chop() -> void:
-	if _current_tool == 1 and is_instance_valid(_nearby_tree):
-		_nearby_tree.stop_chop()
-		_nearby_tree.set_highlighted(false)
-	_nearby_tree = null
+func _cancel_harvest() -> void:
+	if (_current_tool == 1 or _current_tool == 2) and is_instance_valid(_nearby_resource):
+		_nearby_resource.stop_harvest()
+		_nearby_resource.set_highlighted(false)
+	_nearby_resource = null
 	_channeling = false
 
 
-func _update_nearby_tree() -> void:
-	# Highlight the nearest tree in range while the axe is out (and not mid-chop).
-	if _current_tool != 1 or _channeling:
+func _update_nearby_resource() -> void:
+	# Highlight the nearest harvestable node in range while the matching tool is out.
+	var wanted := _tool_resource()
+	if wanted == "" or _channeling:
 		return
 	var best: Node = null
 	var best_d := INF
-	for tree in get_tree().get_nodes_in_group("trees"):
-		if not is_instance_valid(tree) or not tree.can_be_chopped():
+	for node in get_tree().get_nodes_in_group("resources"):
+		if not is_instance_valid(node) or node.resource != wanted or not node.can_be_harvested():
 			continue
-		var d := global_position.distance_to(tree.global_position)
-		if d < tree.near_range and d < best_d:
-			best = tree
+		var d := global_position.distance_to(node.global_position)
+		if d < node.near_range and d < best_d:
+			best = node
 			best_d = d
-	if best != _nearby_tree:
-		if is_instance_valid(_nearby_tree):
-			_nearby_tree.set_highlighted(false)
+	if best != _nearby_resource:
+		if is_instance_valid(_nearby_resource):
+			_nearby_resource.set_highlighted(false)
 		if best != null:
 			best.set_highlighted(true)
-		_nearby_tree = best
+		_nearby_resource = best
 
 
 func _update_nearby_water() -> void:
@@ -714,15 +727,16 @@ func _physics_process(delta: float) -> void:
 
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 
-	_update_nearby_tree()
+	_update_nearby_resource()
 	_update_nearby_water()
 
-	# While channeling (digging/fishing/watering/chopping), stand still until movement interrupts.
+	# While channeling (digging/fishing/watering/harvesting), stand still until movement interrupts.
 	if _channeling:
-		var tree_gone := _current_tool == 1 and not is_instance_valid(_nearby_tree)
-		if input != Vector2.ZERO or tree_gone:
-			if _current_tool == 1 and is_instance_valid(_nearby_tree):
-				_nearby_tree.stop_chop()
+		var harvesting := _current_tool == 1 or _current_tool == 2
+		var resource_gone := harvesting and not is_instance_valid(_nearby_resource)
+		if input != Vector2.ZERO or resource_gone:
+			if harvesting and is_instance_valid(_nearby_resource):
+				_nearby_resource.stop_harvest()
 			_channeling = false
 			_play_anim(ANIM_IDLE[_facing_dir])
 		else:
@@ -858,7 +872,7 @@ func _is_click_on_minimap(screen_pos: Vector2) -> bool:
 
 
 func move_to(world_pos: Vector2) -> void:
-	_cancel_chop()  # moving interrupts any sustained action (chopping included)
+	_cancel_harvest()  # moving interrupts any sustained action (harvesting included)
 	_target = world_pos
 	_target_set = true
 	_path.clear()

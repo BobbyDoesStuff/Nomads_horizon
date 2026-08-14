@@ -12,7 +12,7 @@ const SQRT2 := 1.41421356237
 const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
-const TREE_SCRIPT := preload("res://scripts/world/tree.gd")
+const RESOURCE_SCRIPT := preload("res://scripts/world/resource_node.gd")
 const CAMPFIRE_SCRIPT := preload("res://scripts/world/campfire.gd")
 
 var _remote_players: Dictionary = {}
@@ -98,15 +98,15 @@ func _setup_map() -> void:
 
 	# -- obstacles (unwalkable, with collision) — dispersed across the map --
 	# Flora
-	_place_tree("flora/Dense Trees - size 2 - 2x2A.png", Vector2(2000, 1500), Vector2(200, 120), 0)
-	_place_tree("flora/Dense Trees - size 3 - 3x3A.png", Vector2(5000, 1400), Vector2(260, 160), 1)
+	_place_resource("flora/Dense Trees - size 2 - 2x2A.png", Vector2(2000, 1500), Vector2(200, 120), "Tree_0", "wood")
+	_place_resource("flora/Dense Trees - size 3 - 3x3A.png", Vector2(5000, 1400), Vector2(260, 160), "Tree_1", "wood")
 	_place_obstacle("flora/Dense Flora - size 1 - 2x2A.png", Vector2(4500, 2600), Vector2(160, 120))
-	_place_tree("flora/Dense Trees - size 2 - 2x2B.png", Vector2(2400, 2700), Vector2(200, 120), 2)
+	_place_resource("flora/Dense Trees - size 2 - 2x2B.png", Vector2(2400, 2700), Vector2(200, 120), "Tree_2", "wood")
 
 	# Rocks
-	_place_obstacle("rocks/Rocky Cover - Size 1A.png", Vector2(3000, 900), Vector2(140, 100))
-	_place_obstacle("rocks/Rocky Cover - Size 2A.png", Vector2(5200, 2200), Vector2(220, 140))
-	_place_obstacle("rocks/Rocky Cover - Size 3A.png", Vector2(1800, 2400), Vector2(280, 180))
+	_place_resource("rocks/Rocky Cover - Size 1A.png", Vector2(3000, 900), Vector2(140, 100), "Rock_0", "stone")
+	_place_resource("rocks/Rocky Cover - Size 2A.png", Vector2(5200, 2200), Vector2(220, 140), "Rock_1", "stone")
+	_place_resource("rocks/Rocky Cover - Size 3A.png", Vector2(1800, 2400), Vector2(280, 180), "Rock_2", "stone")
 
 	# Infrastructure
 	_place_obstacle("infrastructure/Small Crates 1A.png",     Vector2(4000, 3200), Vector2(100, 60))
@@ -186,12 +186,12 @@ func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) ->
 	_prects.append(Rect2(pos + Vector2(0, -collision_size.y / 2.0) - inflated / 2.0, inflated))
 
 
-func _place_tree(rel_path: String, pos: Vector2, collision_size: Vector2, id: int) -> void:
-	## Places a cuttable tree (unwalkable, same as an obstacle, but choppable).
-	var tree = TREE_SCRIPT.new()
-	tree.name = "Tree_%d" % id
-	add_child(tree)
-	tree.setup(TILE_DIR + "/obstacles/" + rel_path, pos, collision_size, id)
+func _place_resource(rel_path: String, pos: Vector2, collision_size: Vector2, node_name: String, resource: String) -> void:
+	## Places a harvestable resource node (unwalkable, same as an obstacle, but harvestable).
+	var node = RESOURCE_SCRIPT.new()
+	node.name = node_name
+	add_child(node)
+	node.setup(TILE_DIR + "/obstacles/" + rel_path, pos, collision_size, node_name, resource)
 
 	# Inflated footprint for the coarse pathfinding grid (same as obstacles).
 	var inflated := collision_size + Vector2(AGENT * 2, AGENT * 2)
@@ -544,24 +544,24 @@ func _broadcast_attack(peer_id: int, facing: int = 0) -> void:
 		p.play_attack_animation(facing)
 
 
-# ------------------------------------------------------------------ tree chopping
+# ------------------------------------------------------------------ resource harvesting
 @rpc("any_peer", "call_remote", "reliable")
-func recv_tree_chopped(tree_id: int) -> void:
+func recv_resource_depleted(node_id: String) -> void:
 	if not NetworkManager.is_server:
 		return
-	_remove_tree_node(tree_id)
-	_remove_tree.rpc(tree_id)
+	_remove_resource_node(node_id)
+	_remove_resource.rpc(node_id)
 
 
 @rpc("authority", "call_remote", "reliable")
-func _remove_tree(tree_id: int) -> void:
-	_remove_tree_node(tree_id)
+func _remove_resource(node_id: String) -> void:
+	_remove_resource_node(node_id)
 
 
-func _remove_tree_node(tree_id: int) -> void:
-	var tree := get_node_or_null("Tree_%d" % tree_id)
-	if tree and tree.has_method("chopped"):
-		tree.chopped()
+func _remove_resource_node(node_id: String) -> void:
+	var node := get_node_or_null(node_id)
+	if node and node.has_method("chopped"):
+		node.chopped()
 
 
 # ------------------------------------------------------------------ damage + health

@@ -74,6 +74,12 @@ text = "Fish: 0"
 theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.5, 0.8, 1.0, 1)
 
+[node name="StoneLabel" type="Label" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+text = "Stone: 0"
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.72, 0.74, 0.78, 1)
+
 [node name="CenterPanel" type="Control" parent="MarginContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3

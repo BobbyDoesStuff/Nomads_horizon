@@ -1,27 +1,30 @@
 extends StaticBody2D
-## Cuttable tree — highlights when a nearby player has the axe out, and can be
-## chopped down for wood.
+## Harvestable resource node (tree → wood, rock → stone).
+## Highlights when a nearby player has the matching tool out, and can be
+## harvested down for its resource.
 
-const WOOD_TOTAL := 10          # wood each tree yields
-const WOOD_INTERVAL := 1.0      # seconds between each +1 wood
-const RESPAWN_TIME := 10.0      # seconds a felled tree stays gone
+const HARVEST_TOTAL := 10       # resource each node yields
+const HARVEST_INTERVAL := 1.0   # seconds between each +1
+const RESPAWN_TIME := 30.0      # seconds a depleted node stays gone
 
-var tree_id: int = -1
-var near_range: float = 120.0   # how close the player must be to chop
+var node_id: String = ""        # stable name, e.g. "Tree_0" / "Rock_1"
+var resource: String = "wood"   # "wood" or "stone"
+var near_range: float = 120.0   # how close the player must be to harvest
 
 var _sprite_w: int = 0
 var _sprite_h: int = 0
 var _highlight: Panel = null
 var _progress: ProgressBar = null
-var _chopper: Node = null
-var _wood_left: int = WOOD_TOTAL
+var _harvester: Node = null
+var _left: int = HARVEST_TOTAL
 var _accum: float = 0.0
 var _respawn_timer: float = -1.0   # -1 = not respawning
 
 
-func setup(img_path: String, pos: Vector2, fallback_size: Vector2, id: int) -> void:
-	tree_id = id
-	add_to_group("trees")
+func setup(img_path: String, pos: Vector2, fallback_size: Vector2, p_node_id: String, p_resource: String) -> void:
+	node_id = p_node_id
+	resource = p_resource
+	add_to_group("resources")
 	global_position = pos
 	collision_layer = 1
 	collision_mask = 0
@@ -29,7 +32,7 @@ func setup(img_path: String, pos: Vector2, fallback_size: Vector2, id: int) -> v
 
 	var img := _load_image(img_path)
 	if img == null:
-		push_error("[Tree] Missing: " + img_path)
+		push_error("[Resource] Missing: " + img_path)
 		return
 	_sprite_w = img.get_width()
 	_sprite_h = img.get_height()
@@ -52,8 +55,8 @@ func setup(img_path: String, pos: Vector2, fallback_size: Vector2, id: int) -> v
 	add_child(_progress)
 
 
-func can_be_chopped() -> bool:
-	return _chopper == null and _wood_left > 0 and _respawn_timer < 0.0
+func can_be_harvested() -> bool:
+	return _harvester == null and _left > 0 and _respawn_timer < 0.0
 
 
 func set_highlighted(on: bool) -> void:
@@ -61,18 +64,18 @@ func set_highlighted(on: bool) -> void:
 		_highlight.visible = on
 
 
-func start_chop(chopper: Node) -> void:
-	if _chopper != null:
+func start_harvest(harvester: Node) -> void:
+	if _harvester != null:
 		return
-	_chopper = chopper
+	_harvester = harvester
 	_accum = 0.0
 	_progress.value = 0.0
 	_progress.visible = true
 	set_highlighted(false)
 
 
-func stop_chop() -> void:
-	_chopper = null
+func stop_harvest() -> void:
+	_harvester = null
 	_progress.visible = false
 
 
@@ -82,44 +85,44 @@ func _process(delta: float) -> void:
 		if _respawn_timer <= 0.0:
 			_respawn()
 		return
-	if _chopper == null:
+	if _harvester == null:
 		return
-	if not is_instance_valid(_chopper):
-		stop_chop()
+	if not is_instance_valid(_harvester):
+		stop_harvest()
 		return
 	_accum += delta
-	while _accum >= WOOD_INTERVAL:
-		_accum -= WOOD_INTERVAL
-		_chop_tick()
+	while _accum >= HARVEST_INTERVAL:
+		_accum -= HARVEST_INTERVAL
+		_harvest_tick()
 
 
-func _chop_tick() -> void:
-	_wood_left -= 1
-	_progress.value = WOOD_TOTAL - _wood_left
-	if is_instance_valid(_chopper) and _chopper.has_method("add_wood"):
-		_chopper.add_wood(1)
-	_spawn_float_text("+1 wood", Color(0.85, 0.65, 0.3))
-	if _wood_left <= 0:
+func _harvest_tick() -> void:
+	_left -= 1
+	_progress.value = HARVEST_TOTAL - _left
+	if is_instance_valid(_harvester) and _harvester.has_method("add_resource"):
+		_harvester.add_resource(resource, 1)
+	_spawn_float_text("+1 " + resource, _resource_color())
+	if _left <= 0:
 		_finish()
 
 
 func _finish() -> void:
 	chopped()
-	# Fell the tree everywhere (server relays to the other peers).
+	# Deplete the node everywhere (server relays to the other peers).
 	var world := get_parent()
 	if world and multiplayer.multiplayer_peer != null:
 		if NetworkManager.is_server:
-			world._remove_tree.rpc(tree_id)
+			world._remove_resource.rpc(node_id)
 		else:
-			world.recv_tree_chopped.rpc_id(1, tree_id)
+			world.recv_resource_depleted.rpc_id(1, node_id)
 
 
 func chopped() -> void:
-	# Enter the felled (respawning) state — also called on remote peers via RPC.
-	# Wake whichever chopper is still attached (handles two players racing on one tree).
-	if is_instance_valid(_chopper) and _chopper.has_method("_on_tree_finished"):
-		_chopper._on_tree_finished(self)
-	_chopper = null
+	# Enter the depleted (respawning) state — also called on remote peers via RPC.
+	# Wake whichever harvester is still attached (handles two players racing on one node).
+	if is_instance_valid(_harvester) and _harvester.has_method("_on_resource_finished"):
+		_harvester._on_resource_finished(self)
+	_harvester = null
 	_progress.visible = false
 	visible = false
 	collision_layer = 0
@@ -128,9 +131,13 @@ func chopped() -> void:
 
 func _respawn() -> void:
 	_respawn_timer = -1.0
-	_wood_left = WOOD_TOTAL
+	_left = HARVEST_TOTAL
 	visible = true
 	collision_layer = 1
+
+
+func _resource_color() -> Color:
+	return Color(0.85, 0.65, 0.3) if resource == "wood" else Color(0.72, 0.74, 0.78)
 
 
 func _spawn_float_text(txt: String, color: Color) -> void:
@@ -145,8 +152,7 @@ func _spawn_float_text(txt: String, color: Color) -> void:
 	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 	label.add_theme_constant_override("outline_size", 4)
 	label.z_index = 10
-	# Parent to the world (not the tree) so the final "+1 wood" isn't hidden when
-	# the tree fells itself.
+	# Parent to the world (not the node) so the final "+1" isn't hidden when it depletes.
 	var parent := get_parent()
 	if parent:
 		parent.add_child(label)
@@ -175,9 +181,9 @@ func _make_highlight() -> Panel:
 
 func _make_progress() -> ProgressBar:
 	var bar := ProgressBar.new()
-	bar.name = "ChopProgress"
+	bar.name = "HarvestProgress"
 	bar.min_value = 0
-	bar.max_value = WOOD_TOTAL
+	bar.max_value = HARVEST_TOTAL
 	bar.value = 0
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(80, 10)

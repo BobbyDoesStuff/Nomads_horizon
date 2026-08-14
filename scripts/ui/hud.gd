@@ -11,6 +11,7 @@ const ICON_FRAME := 460
 @onready var hunger_bar:  ProgressBar = $MarginContainer/HBoxContainer/LeftPanel/HungerBar
 @onready var wood_label:  Label = $MarginContainer/HBoxContainer/LeftPanel/WoodLabel
 @onready var fish_label:  Label = $MarginContainer/HBoxContainer/LeftPanel/FishLabel
+@onready var stone_label: Label = $MarginContainer/HBoxContainer/LeftPanel/StoneLabel
 @onready var hotbar:      HBoxContainer = $MarginContainer/HBoxContainer/CenterPanel/Hotbar
 @onready var chat_box:    Control = $ChatBox
 
@@ -150,6 +151,7 @@ func _process(_delta: float) -> void:
 		hunger_bar.value = local.hunger
 		wood_label.text = "Wood: %d" % local.wood
 		fish_label.text = "Fish: %d" % local.fish
+		stone_label.text = "Stone: %d" % local.stone
 		if local._current_tool != _last_tool:
 			_last_tool = local._current_tool
 			_update_hotbar_selection()
