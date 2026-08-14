@@ -9,6 +9,8 @@ var _remote_pos:     Vector2
 var _sync_timer:     float   = 0.0
 var _facing_dir:     int     = 0       # 0-7, remembered during idle
 var _current_anim:   String  = ""
+var _bubble:         Label   = null
+var _bubble_timer:   Timer   = null
 
 # ------------------------------------------------------------------ direction constants
 # Row order in the sprite sheet (top to bottom):
@@ -47,6 +49,7 @@ func _ready() -> void:
 
 	_setup_sprite_frames()
 	_setup_name_label()
+	_setup_chat_bubble()
 	_setup_camera()
 
 	if multiplayer.multiplayer_peer != null and not NetworkManager.is_server:
@@ -120,6 +123,30 @@ func _setup_name_label() -> void:
 		label.text = "P" + label.text
 
 
+func _setup_chat_bubble() -> void:
+	_bubble = get_node_or_null("ChatBubble")
+	if _bubble == null:
+		return
+	_bubble_timer = Timer.new()
+	_bubble_timer.one_shot = true
+	_bubble_timer.wait_time = 4.0
+	_bubble_timer.timeout.connect(_on_bubble_timeout)
+	add_child(_bubble_timer)
+
+
+func show_chat_bubble(text: String) -> void:
+	if _bubble == null:
+		return
+	_bubble.text = text
+	_bubble.visible = true
+	_bubble_timer.start()
+
+
+func _on_bubble_timeout() -> void:
+	if _bubble:
+		_bubble.visible = false
+
+
 # ------------------------------------------------------------------ direction helpers
 func _get_dir_index(vec: Vector2) -> int:
 	if vec.length_squared() < 0.5:
@@ -137,6 +164,10 @@ func _play_anim(anim: String) -> void:
 		var sprite: AnimatedSprite2D = $AnimatedSprite2D
 		if sprite.sprite_frames and sprite.sprite_frames.has_animation(anim):
 			sprite.play(anim)
+
+
+func _is_typing() -> bool:
+	return get_viewport().gui_get_focus_owner() is LineEdit
 
 
 # ------------------------------------------------------------------ network
@@ -163,6 +194,12 @@ func _physics_process(delta: float) -> void:
 			_play_anim(ANIM_WALK[(_facing_dir + WALK_ROW_OFFSET) % DIR_COUNT])
 		else:
 			_play_anim(ANIM_IDLE[_facing_dir])
+		return
+
+	# While typing in chat, stand still.
+	if _is_typing():
+		velocity = Vector2.ZERO
+		_play_anim(ANIM_IDLE[_facing_dir])
 		return
 
 	# ---- local / authority ----
@@ -236,6 +273,15 @@ func _input(event: InputEvent) -> void:
 			_target = click_pos
 			_target_set = true
 	if event.is_action_pressed("ui_cancel"):
+		# Escape closes chat first if it's open; otherwise exit to menu.
+		var chat: Control = get_tree().get_first_node_in_group("chat_box")
+		if chat and chat.visible:
+			chat.visible = false
+			var line_edit: LineEdit = chat.get_node_or_null("LineEdit")
+			if line_edit:
+				line_edit.release_focus()
+			get_viewport().set_input_as_handled()
+			return
 		if multiplayer.multiplayer_peer != null:
 			NetworkManager.close_connection()
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

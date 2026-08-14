@@ -16,6 +16,7 @@ var _map_size:     Vector2       = Vector2.ZERO
 
 func _ready() -> void:
 	chat_box.visible = false
+	chat_box.add_to_group("chat_box")
 	_build_minimap()
 	_fix_hotbar_position()
 
@@ -65,6 +66,18 @@ func _build_minimap() -> void:
 	_minimap_dot.custom_minimum_size = Vector2(5, 5)
 	_minimap_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_minimap.add_child(_minimap_dot)
+
+	# Border — separates the minimap from the identical world background
+	var border := Panel.new()
+	border.name = "Border"
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var border_style := StyleBoxFlat.new()
+	border_style.bg_color = Color(0, 0, 0, 0)
+	border_style.set_border_width_all(2)
+	border_style.border_color = Color(0.85, 0.85, 0.85, 1)
+	border.add_theme_stylebox_override("panel", border_style)
+	border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_minimap.add_child(border)
 
 
 func _process(_delta: float) -> void:
@@ -122,11 +135,14 @@ func _get_local_player() -> CharacterBody2D:
 # ------------------------------------------------------------------ input
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("open_chat"):
-		chat_box.visible = not chat_box.visible
-		if chat_box.visible:
-			chat_box.get_node("LineEdit").grab_focus()
+		var line_edit: LineEdit = chat_box.get_node("LineEdit")
+		if not line_edit.has_focus():
+			chat_box.visible = true
+			line_edit.grab_focus()
+			get_viewport().set_input_as_handled()
+		return
 
-	# Left-click on minimap → move player to that world position
+	# Right-click on minimap → move player to that world position
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if _minimap and _minimap.get_global_rect().has_point(event.global_position):
 			var local: Vector2 = event.global_position - _minimap.global_position

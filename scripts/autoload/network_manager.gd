@@ -52,7 +52,26 @@ func close_connection() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func send_chat(text: String) -> void:
+	# Runs on the server only (clients call this via rpc_id(1)).
+	if not is_server:
+		return
 	var sender_id := multiplayer.get_remote_sender_id()
+	chat_received.emit(sender_id, text)
+	# Relay to every other client; the sender already echoes locally.
+	for id in multiplayer.get_peers():
+		if id != sender_id:
+			_relay_chat.rpc_id(id, sender_id, text)
+
+
+# Host sends its own message without a self-RPC round trip.
+func host_send_chat(text: String) -> void:
+	var my_id := multiplayer.get_unique_id()
+	for id in multiplayer.get_peers():
+		_relay_chat.rpc_id(id, my_id, text)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _relay_chat(sender_id: int, text: String) -> void:
 	chat_received.emit(sender_id, text)
 
 
