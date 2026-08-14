@@ -117,6 +117,7 @@ func _setup_camera() -> void:
 	var cam := Camera2D.new()
 	cam.name = "Camera2D"
 	cam.position_smoothing_enabled = false
+	cam.zoom = Vector2(0.7, 0.7)  # zoomed out so tree progress bars stay visible
 	# Clamp the camera to the map so it never shows past the water's edge.
 	var world := get_parent()
 	if world and world.has_method("is_in_bounds"):

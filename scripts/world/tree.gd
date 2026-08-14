@@ -4,6 +4,7 @@ extends StaticBody2D
 
 const WOOD_TOTAL := 10          # wood each tree yields
 const WOOD_INTERVAL := 1.0      # seconds between each +1 wood
+const RESPAWN_TIME := 10.0      # seconds a felled tree stays gone
 
 var tree_id: int = -1
 var near_range: float = 120.0   # how close the player must be to chop
@@ -15,6 +16,7 @@ var _progress: ProgressBar = null
 var _chopper: Node = null
 var _wood_left: int = WOOD_TOTAL
 var _accum: float = 0.0
+var _respawn_timer: float = -1.0   # -1 = not respawning
 
 
 func setup(img_path: String, pos: Vector2, fallback_size: Vector2, id: int) -> void:
@@ -51,7 +53,7 @@ func setup(img_path: String, pos: Vector2, fallback_size: Vector2, id: int) -> v
 
 
 func can_be_chopped() -> bool:
-	return _chopper == null and _wood_left > 0
+	return _chopper == null and _wood_left > 0 and _respawn_timer < 0.0
 
 
 func set_highlighted(on: bool) -> void:
@@ -75,6 +77,11 @@ func stop_chop() -> void:
 
 
 func _process(delta: float) -> void:
+	if _respawn_timer >= 0.0:
+		_respawn_timer -= delta
+		if _respawn_timer <= 0.0:
+			_respawn()
+		return
 	if _chopper == null:
 		return
 	if not is_instance_valid(_chopper):
@@ -97,25 +104,40 @@ func _chop_tick() -> void:
 
 
 func _finish() -> void:
-	# Wake the chopper back to idle before we vanish.
-	if is_instance_valid(_chopper) and _chopper.has_method("_on_tree_finished"):
-		_chopper._on_tree_finished(self)
-	# Remove this tree everywhere (server relays to the other peers).
+	chopped()
+	# Fell the tree everywhere (server relays to the other peers).
 	var world := get_parent()
 	if world and multiplayer.multiplayer_peer != null:
 		if NetworkManager.is_server:
-			world._remove_tree(tree_id)
 			world._remove_tree.rpc(tree_id)
 		else:
 			world.recv_tree_chopped.rpc_id(1, tree_id)
-	queue_free()
+
+
+func chopped() -> void:
+	# Enter the felled (respawning) state — also called on remote peers via RPC.
+	# Wake whichever chopper is still attached (handles two players racing on one tree).
+	if is_instance_valid(_chopper) and _chopper.has_method("_on_tree_finished"):
+		_chopper._on_tree_finished(self)
+	_chopper = null
+	_progress.visible = false
+	visible = false
+	collision_layer = 0
+	_respawn_timer = RESPAWN_TIME
+
+
+func _respawn() -> void:
+	_respawn_timer = -1.0
+	_wood_left = WOOD_TOTAL
+	visible = true
+	collision_layer = 1
 
 
 func _spawn_float_text(txt: String, color: Color) -> void:
 	var label := Label.new()
 	label.text = txt
 	label.size = Vector2(90, 22)
-	label.position = Vector2(-45, -_sprite_h - 34)
+	label.position = global_position + Vector2(-45, -_sprite_h - 34)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 16)
@@ -123,7 +145,13 @@ func _spawn_float_text(txt: String, color: Color) -> void:
 	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 	label.add_theme_constant_override("outline_size", 4)
 	label.z_index = 10
-	add_child(label)
+	# Parent to the world (not the tree) so the final "+1 wood" isn't hidden when
+	# the tree fells itself.
+	var parent := get_parent()
+	if parent:
+		parent.add_child(label)
+	else:
+		add_child(label)
 
 	var tween := create_tween()
 	tween.set_parallel(true)

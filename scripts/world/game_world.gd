@@ -457,8 +457,8 @@ func _remove_tree(tree_id: int) -> void:
 
 func _remove_tree_node(tree_id: int) -> void:
 	var tree := get_node_or_null("Tree_%d" % tree_id)
-	if tree:
-		tree.queue_free()
+	if tree and tree.has_method("chopped"):
+		tree.chopped()
 
 
 # ------------------------------------------------------------------ damage + health
