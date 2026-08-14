@@ -51,6 +51,12 @@ layout_mode = 2
 value = 100.0
 show_percentage = false
 
+[node name="WoodLabel" type="Label" parent="MarginContainer/HBoxContainer/LeftPanel"]
+layout_mode = 2
+text = "Wood: 0"
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.85, 0.65, 0.3, 1)
+
 [node name="CenterPanel" type="Control" parent="MarginContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -10,6 +10,7 @@ const WATER_RES := 4   # fine water-mask resolution (pixels per cell)
 const BACKGROUND_TEX := preload("res://assets/tiles/background.png")
 const WATER_SHADER := preload("res://assets/shaders/water.gdshader")
 const RIPPLE_SCRIPT := preload("res://scripts/effects/ripple.gd")
+const TREE_SCRIPT := preload("res://scripts/world/tree.gd")
 
 var _remote_players: Dictionary = {}
 var _spawned:         bool      = false
@@ -89,10 +90,10 @@ func _setup_map() -> void:
 
 	# -- obstacles (unwalkable, with collision) — dispersed across the map --
 	# Flora
-	_place_obstacle("flora/Dense Trees - size 2 - 2x2A.png", Vector2(2000, 1500), Vector2(200, 120))
-	_place_obstacle("flora/Dense Trees - size 3 - 3x3A.png", Vector2(5000, 1400), Vector2(260, 160))
+	_place_tree("flora/Dense Trees - size 2 - 2x2A.png", Vector2(2000, 1500), Vector2(200, 120), 0)
+	_place_tree("flora/Dense Trees - size 3 - 3x3A.png", Vector2(5000, 1400), Vector2(260, 160), 1)
 	_place_obstacle("flora/Dense Flora - size 1 - 2x2A.png", Vector2(4500, 2600), Vector2(160, 120))
-	_place_obstacle("flora/Dense Trees - size 2 - 2x2B.png", Vector2(2400, 2700), Vector2(200, 120))
+	_place_tree("flora/Dense Trees - size 2 - 2x2B.png", Vector2(2400, 2700), Vector2(200, 120), 2)
 
 	# Rocks
 	_place_obstacle("rocks/Rocky Cover - Size 1A.png", Vector2(3000, 900), Vector2(140, 100))
@@ -171,6 +172,18 @@ func _place_obstacle(rel_path: String, pos: Vector2, collision_size: Vector2) ->
 	_add_collision_polygon(body, img, collision_size)
 
 	# Inflated footprint for the coarse pathfinding grid.
+	var inflated := collision_size + Vector2(AGENT * 2, AGENT * 2)
+	_prects.append(Rect2(pos + Vector2(0, -collision_size.y / 2.0) - inflated / 2.0, inflated))
+
+
+func _place_tree(rel_path: String, pos: Vector2, collision_size: Vector2, id: int) -> void:
+	## Places a cuttable tree (unwalkable, same as an obstacle, but choppable).
+	var tree = TREE_SCRIPT.new()
+	tree.name = "Tree_%d" % id
+	add_child(tree)
+	tree.setup(TILE_DIR + "/obstacles/" + rel_path, pos, collision_size, id)
+
+	# Inflated footprint for the coarse pathfinding grid (same as obstacles).
 	var inflated := collision_size + Vector2(AGENT * 2, AGENT * 2)
 	_prects.append(Rect2(pos + Vector2(0, -collision_size.y / 2.0) - inflated / 2.0, inflated))
 
@@ -426,6 +439,26 @@ func _broadcast_attack(peer_id: int, facing: int = 0) -> void:
 	var p := get_node_or_null(str(peer_id))
 	if p:
 		p.play_attack_animation(facing)
+
+
+# ------------------------------------------------------------------ tree chopping
+@rpc("any_peer", "call_remote", "reliable")
+func recv_tree_chopped(tree_id: int) -> void:
+	if not NetworkManager.is_server:
+		return
+	_remove_tree_node(tree_id)
+	_remove_tree.rpc(tree_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _remove_tree(tree_id: int) -> void:
+	_remove_tree_node(tree_id)
+
+
+func _remove_tree_node(tree_id: int) -> void:
+	var tree := get_node_or_null("Tree_%d" % tree_id)
+	if tree:
+		tree.queue_free()
 
 
 # ------------------------------------------------------------------ damage + health

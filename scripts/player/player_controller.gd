@@ -33,6 +33,8 @@ var _attacking:      bool    = false
 var _attack_cooldown: float  = 0.0
 var _channeling:     bool    = false
 var _current_tool:   int     = -1    # -1 = no tool (default)
+var wood:            int     = 0     # wood gathered (inventory)
+var _nearby_tree:    Node    = null  # tree within chop range (axe equipped)
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
 
@@ -217,6 +219,7 @@ func _on_animation_finished() -> void:
 func _set_tool(index: int) -> void:
 	if index == _current_tool:
 		return
+	_cancel_chop()  # stop chopping before switching away from the axe
 	_current_tool = index
 	_channeling = false  # switching tools interrupts any sustained action
 	var tool := "none"
@@ -301,6 +304,9 @@ func _facing_vector() -> Vector2:
 
 
 func _start_attack() -> void:
+	if _current_tool == 1:  # axe — only chops trees
+		_try_chop_tree()
+		return
 	if _is_channel_tool():
 		# Sustained action (dig/fish/water) — toggle and stay in it until interrupted.
 		_channeling = not _channeling
@@ -323,13 +329,86 @@ func _is_channel_tool() -> bool:
 
 
 func _action_loop() -> bool:
-	return _current_tool == 4  # showel (digging) loops; fish/water play once and hold
+	return _current_tool == 4 or _current_tool == 1  # showel (dig) + axe (chop) loop their swing
 
 
 func _action_frame_count() -> int:
 	if _current_tool == 5:  # fishing: stop after the cast, hold the rod out
 		return 6  # full cast — freeze on the final frame (chord stretched in the water)
 	return 0  # auto-detect from sheet width
+
+
+# ------------------------------------------------------------------ tree chopping
+func _try_chop_tree() -> void:
+	if _nearby_tree == null or not is_instance_valid(_nearby_tree):
+		_spawn_float_text("Need to be next to a tree to cut", Color(1.0, 0.9, 0.4))
+		return
+	if _channeling:
+		return  # already chopping
+	_channeling = true
+	_nearby_tree.start_chop(self)
+	_play_anim(ANIM_ATTACK[_facing_dir])
+
+
+func _on_tree_finished(_tree: Node) -> void:
+	# The tree finished being chopped — return to idle.
+	_channeling = false
+	_nearby_tree = null
+	_play_anim(ANIM_IDLE[_facing_dir])
+
+
+func add_wood(amount: int) -> void:
+	wood += amount
+
+
+func _cancel_chop() -> void:
+	if _current_tool == 1 and is_instance_valid(_nearby_tree):
+		_nearby_tree.stop_chop()
+		_nearby_tree.set_highlighted(false)
+	_nearby_tree = null
+	_channeling = false
+
+
+func _update_nearby_tree() -> void:
+	# Highlight the nearest tree in range while the axe is out (and not mid-chop).
+	if _current_tool != 1 or _channeling:
+		return
+	var best: Node = null
+	var best_d := INF
+	for tree in get_tree().get_nodes_in_group("trees"):
+		if not is_instance_valid(tree) or not tree.can_be_chopped():
+			continue
+		var d := global_position.distance_to(tree.global_position)
+		if d < tree.near_range and d < best_d:
+			best = tree
+			best_d = d
+	if best != _nearby_tree:
+		if is_instance_valid(_nearby_tree):
+			_nearby_tree.set_highlighted(false)
+		if best != null:
+			best.set_highlighted(true)
+		_nearby_tree = best
+
+
+func _spawn_float_text(text: String, color: Color) -> void:
+	var label := Label.new()
+	label.text = text
+	label.size = Vector2(200, 22)
+	label.position = Vector2(-100, -180)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	label.add_theme_constant_override("outline_size", 4)
+	label.z_index = 10
+	add_child(label)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 44.0, 0.9).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.9).set_delay(0.4)
+	tween.finished.connect(label.queue_free)
 
 
 # Called by remote players via RPC to replay this player's attack.
@@ -569,9 +648,14 @@ func _physics_process(delta: float) -> void:
 
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 
-	# While channeling (digging/fishing/watering), stand still until movement interrupts.
+	_update_nearby_tree()
+
+	# While channeling (digging/fishing/watering/chopping), stand still until movement interrupts.
 	if _channeling:
-		if input != Vector2.ZERO:
+		var tree_gone := _current_tool == 1 and not is_instance_valid(_nearby_tree)
+		if input != Vector2.ZERO or tree_gone:
+			if _current_tool == 1 and is_instance_valid(_nearby_tree):
+				_nearby_tree.stop_chop()
 			_channeling = false
 			_play_anim(ANIM_IDLE[_facing_dir])
 		else:
@@ -699,7 +783,7 @@ func _is_click_on_minimap(screen_pos: Vector2) -> bool:
 
 
 func move_to(world_pos: Vector2) -> void:
-	_channeling = false  # moving interrupts any sustained action
+	_cancel_chop()  # moving interrupts any sustained action (chopping included)
 	_target = world_pos
 	_target_set = true
 	_path.clear()
