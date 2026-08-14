@@ -31,6 +31,7 @@ var _bubble:         Label   = null
 var _bubble_timer:   Timer   = null
 var _attacking:      bool    = false
 var _attack_cooldown: float  = 0.0
+var _channeling:     bool    = false
 var _current_tool:   int     = -1    # -1 = no tool (default)
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
@@ -66,7 +67,6 @@ const FRAME_W := 460
 const FRAME_H := 460
 const WALK_FRAMES := 6
 const IDLE_FRAMES := 8
-const ATTACK_FRAMES := 6
 const DIR_COUNT   := 8
 # Sheet has 5 directions (down, down-left, left, up-left, up); the right side is mirrored.
 const DIR_ROW := [0, 1, 2, 3, 4, 3, 2, 1]
@@ -130,7 +130,7 @@ func _setup_camera() -> void:
 
 # ------------------------------------------------------------------ sprite setup
 func _setup_sprite_frames() -> void:
-	var sf := _build_frames("none", "sword")
+	var sf := _build_frames("none", "sword", false)
 	if sf == null:
 		push_error("[Player] Missing sprite sheets")
 		return
@@ -145,7 +145,7 @@ func _setup_sprite_frames() -> void:
 
 
 # Build the SpriteFrames for a tool (pure — runs on a background thread).
-func _build_frames(tool: String, attack_sheet: String) -> SpriteFrames:
+func _build_frames(tool: String, attack_sheet: String, channel: bool) -> SpriteFrames:
 	var sf := SpriteFrames.new()
 	var walk_path := "res://assets/sprites/spr_walk_%s.png" % tool
 	var idle_path := "res://assets/sprites/spr_idle_%s.png" % tool
@@ -161,6 +161,7 @@ func _build_frames(tool: String, attack_sheet: String) -> SpriteFrames:
 	var walk_tex := ImageTexture.create_from_image(walk_img)
 	var idle_tex := ImageTexture.create_from_image(idle_img)
 	var attack_tex := ImageTexture.create_from_image(attack_img)
+	var attack_frames := attack_img.get_width() / FRAME_W
 
 	for row in DIR_COUNT:
 		var sheet_row: int = DIR_ROW[row]  # character sheet row (direction)
@@ -185,8 +186,8 @@ func _build_frames(tool: String, attack_sheet: String) -> SpriteFrames:
 
 		sf.add_animation(ANIM_ATTACK[row])
 		sf.set_animation_speed(ANIM_ATTACK[row], 11.0)
-		sf.set_animation_loop(ANIM_ATTACK[row], false)
-		for f in ATTACK_FRAMES:
+		sf.set_animation_loop(ANIM_ATTACK[row], channel)
+		for f in attack_frames:
 			var at := AtlasTexture.new()
 			at.atlas = attack_tex
 			at.region = Rect2(f * FRAME_W, sheet_row * FRAME_H, FRAME_W, FRAME_H)
@@ -213,15 +214,16 @@ func _set_tool(index: int) -> void:
 	if index == _current_tool:
 		return
 	_current_tool = index
+	_channeling = false  # switching tools interrupts any sustained action
 	var tool := "none"
 	if index >= 0 and index < TOOLS.size():
 		tool = TOOLS[index]
 	var attack_sheet := _attack_sheet()
-	WorkerThreadPool.add_task(_build_frames_task.bind(tool, attack_sheet, index))
+	WorkerThreadPool.add_task(_build_frames_task.bind(tool, attack_sheet, index, _is_channel_tool()))
 
 
-func _build_frames_task(tool: String, attack_sheet: String, index: int) -> void:
-	var sf := _build_frames(tool, attack_sheet)
+func _build_frames_task(tool: String, attack_sheet: String, index: int, channel: bool) -> void:
+	var sf := _build_frames(tool, attack_sheet, channel)
 	_apply_frames_deferred.call_deferred(sf, index)
 
 
@@ -232,11 +234,15 @@ func _apply_frames_deferred(sf: SpriteFrames, index: int) -> void:
 
 func _attack_sheet() -> String:
 	match _current_tool:
-		-1, 0: return "sword"     # empty hands or sword → sword swing
+		-1, 0: return "sword"       # empty hands or sword
 		1: return "axe"
 		2: return "pickaxe"
 		3: return "hammer"
-		_: return "swing"         # showel, fishingpole, watercan, shield
+		4: return "showel"          # dig
+		5: return "fishingpole"     # fish
+		6: return "watercan"        # water
+		7: return "shield"          # block
+		_: return "sword"
 
 
 func _load_png(path: String) -> Image:
@@ -291,6 +297,14 @@ func _facing_vector() -> Vector2:
 
 
 func _start_attack() -> void:
+	if _is_channel_tool():
+		# Sustained action (dig/fish/water) — toggle and stay in it until interrupted.
+		_channeling = not _channeling
+		if _channeling:
+			_play_anim(ANIM_ATTACK[_facing_dir])
+		else:
+			_play_anim(ANIM_IDLE[_facing_dir])
+		return
 	if _attacking or _attack_cooldown > 0.0:
 		return
 	_attacking = true
@@ -298,6 +312,10 @@ func _start_attack() -> void:
 	_play_attack_visual()
 	_sync_attack()
 	_do_attack_hit()
+
+
+func _is_channel_tool() -> bool:
+	return _current_tool >= 4 and _current_tool <= 6  # showel, fishingpole, watercan
 
 
 # Called by remote players via RPC to replay this player's attack.
@@ -535,6 +553,17 @@ func _physics_process(delta: float) -> void:
 
 	_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
 
+	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+
+	# While channeling (digging/fishing/watering), stand still until movement interrupts.
+	if _channeling:
+		if input != Vector2.ZERO:
+			_channeling = false
+			_play_anim(ANIM_IDLE[_facing_dir])
+		else:
+			velocity = Vector2.ZERO
+			return
+
 	# While attacking, stand still and let the attack animation play.
 	if _attacking:
 		velocity = Vector2.ZERO
@@ -544,7 +573,6 @@ func _physics_process(delta: float) -> void:
 	var sprinting := Input.is_action_pressed("sprint") and stamina > 0.0
 	var move_speed := sprint_speed if sprinting else speed
 
-	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var dir := Vector2.ZERO
 
 	if input != Vector2.ZERO:
@@ -657,6 +685,7 @@ func _is_click_on_minimap(screen_pos: Vector2) -> bool:
 
 
 func move_to(world_pos: Vector2) -> void:
+	_channeling = false  # moving interrupts any sustained action
 	_target = world_pos
 	_target_set = true
 	_path.clear()
