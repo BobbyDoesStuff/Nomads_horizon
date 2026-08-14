@@ -230,8 +230,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		_play_anim(ANIM_IDLE[_facing_dir])
 
-
-	move_and_slide()
+	# Only move when actually moving. Calling move_and_slide() while idle runs
+	# collision recovery, which lets a nearby moving player shove us around.
+	if velocity != Vector2.ZERO:
+		move_and_slide()
 
 	# Clamp to map bounds
 	var world := get_parent()
