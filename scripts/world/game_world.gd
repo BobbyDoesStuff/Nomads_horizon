@@ -336,14 +336,14 @@ func _apply_damage(victim_id: int, damage: float) -> void:
 	if not p:
 		return
 	p.take_damage(damage)
-	_broadcast_damage.rpc(victim_id, p.health)
+	_broadcast_damage.rpc(victim_id, damage, p.health)
 
 
 @rpc("authority", "call_remote", "reliable")
-func _broadcast_damage(victim_id: int, health: float) -> void:
+func _broadcast_damage(victim_id: int, damage: float, health: float) -> void:
 	var p := get_node_or_null(str(victim_id))
 	if p:
-		p.receive_damage(health)
+		p.receive_damage(damage, health)
 
 
 @rpc("authority", "call_remote", "reliable")

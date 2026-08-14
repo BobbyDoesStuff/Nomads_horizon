@@ -284,12 +284,12 @@ func _setup_healthbar() -> void:
 func take_damage(amount: float) -> void:
 	health = maxf(0.0, health - amount)
 	_time_since_damage = 0.0
-	_show_damage()
+	_show_damage(amount)
 
 
-func receive_damage(new_health: float) -> void:
+func receive_damage(damage: float, new_health: float) -> void:
 	health = clampf(new_health, 0.0, max_health)
-	_show_damage()
+	_show_damage(damage)
 
 
 func set_health(value: float) -> void:
@@ -302,13 +302,35 @@ func tick_regen(delta: float) -> void:
 		health = minf(max_health, health + REGEN_RATE * delta)
 
 
-func _show_damage() -> void:
+func _show_damage(damage: float) -> void:
 	if _healthbar:
 		_healthbar.max_value = max_health
 		_healthbar.value = health
 		_healthbar.visible = true
 		_healthbar_timer.start()
 	_flash_damage()
+	_spawn_damage_number(damage)
+
+
+func _spawn_damage_number(amount: float) -> void:
+	var label := Label.new()
+	label.text = "-%d" % int(round(amount))
+	label.size = Vector2(60, 22)
+	label.position = Vector2(-30 + randf_range(-12.0, 12.0), -140)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(1.0, 0.32, 0.25))
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	label.add_theme_constant_override("outline_size", 4)
+	label.z_index = 10
+	add_child(label)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 46.0, 0.7).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.2)
+	tween.finished.connect(label.queue_free)
 
 
 func _flash_damage() -> void:
