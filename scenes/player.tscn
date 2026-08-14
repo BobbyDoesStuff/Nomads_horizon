@@ -31,7 +31,7 @@ position = Vector2(0, 20)
 shape = SubResource("player_shape")
 
 [node name="NameLabel" type="Label" parent="."]
-position = Vector2(0, -96)
+position = Vector2(0, -116)
 text = ""
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 12

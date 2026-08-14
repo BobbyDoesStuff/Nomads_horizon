@@ -26,7 +26,6 @@ var _attack_cooldown: float  = 0.0
 var _slash:          Line2D = null
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
-var _healthbar_timer:    Timer       = null
 
 # ------------------------------------------------------------------ direction constants
 # Row order in the sprite sheet (top to bottom):
@@ -153,6 +152,9 @@ func _setup_name_label() -> void:
 	label.text = str(multiplayer.get_unique_id()) if multiplayer.multiplayer_peer != null else "You"
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
 		label.text = "P" + label.text
+	# Center the name horizontally over the player's head.
+	label.size = Vector2(120, 18)
+	label.position = Vector2(-60, -116)
 
 
 func _setup_chat_bubble() -> void:
@@ -263,22 +265,16 @@ func _setup_healthbar() -> void:
 	_healthbar.value = health
 	_healthbar.show_percentage = false
 	_healthbar.size = Vector2(60, 8)
-	_healthbar.position = Vector2(-30, -114)
-	_healthbar.visible = false
+	_healthbar.position = Vector2(-30, -98)
+	_healthbar.visible = true
 	_healthbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.9, 0.2, 0.2, 1.0)
+	fill.bg_color = Color(0.2, 0.85, 0.35, 1.0)
 	_healthbar.add_theme_stylebox_override("fill", fill)
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(0.1, 0.1, 0.1, 0.7)
 	_healthbar.add_theme_stylebox_override("background", bg)
 	add_child(_healthbar)
-
-	_healthbar_timer = Timer.new()
-	_healthbar_timer.one_shot = true
-	_healthbar_timer.wait_time = 4.0
-	_healthbar_timer.timeout.connect(func() -> void: _healthbar.visible = false)
-	add_child(_healthbar_timer)
 
 
 func take_damage(amount: float) -> void:
@@ -303,11 +299,6 @@ func tick_regen(delta: float) -> void:
 
 
 func _show_damage(damage: float) -> void:
-	if _healthbar:
-		_healthbar.max_value = max_health
-		_healthbar.value = health
-		_healthbar.visible = true
-		_healthbar_timer.start()
 	_flash_damage()
 	_spawn_damage_number(damage)
 
@@ -338,6 +329,13 @@ func _flash_damage() -> void:
 	var tween := create_tween()
 	tween.tween_property(sprite, "modulate", Color(1.0, 0.3, 0.3), 0.08)
 	tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 1.0), 0.2)
+
+
+func _process(_delta: float) -> void:
+	# Keep the always-visible overhead bar in sync with `health`.
+	if _healthbar:
+		_healthbar.max_value = max_health
+		_healthbar.value = health
 
 
 func _do_attack_hit() -> void:
