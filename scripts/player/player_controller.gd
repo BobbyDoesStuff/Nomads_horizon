@@ -17,6 +17,9 @@ var _facing_dir:     int     = 0       # 0-7, remembered during idle
 var _current_anim:   String  = ""
 var _bubble:         Label   = null
 var _bubble_timer:   Timer   = null
+var _attacking:      bool    = false
+var _attack_cooldown: float  = 0.0
+var _slash:          Line2D = null
 
 # ------------------------------------------------------------------ direction constants
 # Row order in the sprite sheet (top to bottom):
@@ -46,6 +49,11 @@ const FRAME_H := 160
 const WALK_FRAMES := 8
 const DIR_COUNT   := 8
 
+# Inverse of SECTOR_TO_ROW — maps a facing row back to an on-screen direction.
+const ROW_TO_SECTOR := [6, 7, 0, 1, 2, 3, 4, 5]
+const ATTACK_DURATION := 0.25
+const ATTACK_COOLDOWN := 0.5
+
 
 func _ready() -> void:
 	_remote_pos = global_position
@@ -57,6 +65,7 @@ func _ready() -> void:
 	_setup_sprite_frames()
 	_setup_name_label()
 	_setup_chat_bubble()
+	_setup_attack()
 	_setup_camera()
 
 	if multiplayer.multiplayer_peer != null and not NetworkManager.is_server:
@@ -154,6 +163,59 @@ func _on_bubble_timeout() -> void:
 		_bubble.visible = false
 
 
+func _setup_attack() -> void:
+	_slash = Line2D.new()
+	_slash.name = "Slash"
+	_slash.width = 6.0
+	_slash.default_color = Color(1.0, 0.95, 0.6, 1.0)
+	_slash.joint_mode = Line2D.LINE_JOINT_ROUND
+	_slash.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	_slash.end_cap_mode = Line2D.LINE_CAP_ROUND
+	_slash.position = Vector2(0, -40)
+	_slash.visible = false
+	_slash.z_index = 5
+	# Arc swept from -1 to +1 rad, radius 55.
+	var pts := PackedVector2Array()
+	var steps := 12
+	for i in steps + 1:
+		var a: float = -1.0 + 2.0 * float(i) / float(steps)
+		pts.append(Vector2(cos(a), sin(a)) * 55.0)
+	_slash.points = pts
+	add_child(_slash)
+
+
+func _facing_vector() -> Vector2:
+	return Vector2.from_angle(ROW_TO_SECTOR[_facing_dir] * TAU / 8.0)
+
+
+func _start_attack() -> void:
+	if _attacking or _attack_cooldown > 0.0:
+		return
+	_attacking = true
+	_attack_cooldown = ATTACK_COOLDOWN
+
+	var facing := _facing_vector()
+	_slash.rotation = facing.angle()
+	_slash.modulate.a = 1.0
+	_slash.visible = true
+
+	var sprite: AnimatedSprite2D = $AnimatedSprite2D
+	var base_pos: Vector2 = sprite.position
+
+	# Quick lunge toward the facing direction and back.
+	var lunge := create_tween()
+	lunge.tween_property(sprite, "position", base_pos + facing * 26.0, 0.05)
+	lunge.tween_property(sprite, "position", base_pos, 0.10)
+
+	# Fade the slash arc out over the attack, then finish.
+	var fade := create_tween()
+	fade.tween_property(_slash, "modulate:a", 0.0, ATTACK_DURATION)
+	fade.tween_callback(func() -> void:
+		_slash.visible = false
+		_attacking = false
+	)
+
+
 # ------------------------------------------------------------------ direction helpers
 func _get_dir_index(vec: Vector2) -> int:
 	if vec.length_squared() < 0.5:
@@ -205,6 +267,14 @@ func _physics_process(delta: float) -> void:
 
 	# While typing in chat, stand still.
 	if _is_typing():
+		velocity = Vector2.ZERO
+		_play_anim(ANIM_IDLE[_facing_dir])
+		return
+
+	_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
+
+	# While attacking, stand still and let the animation play.
+	if _attacking:
 		velocity = Vector2.ZERO
 		_play_anim(ANIM_IDLE[_facing_dir])
 		return
@@ -282,6 +352,9 @@ func _is_click_on_minimap(screen_pos: Vector2) -> bool:
 func _input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if not _is_typing():
+			_start_attack()
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if _is_click_on_minimap(event.global_position):
 			return  # let the HUD handle minimap clicks
