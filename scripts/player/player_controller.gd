@@ -363,6 +363,13 @@ func _process(_delta: float) -> void:
 		if world and world.has_method("get_water_depth"):
 			depth = world.get_water_depth(global_position)
 		_submerge_mat.set_shader_parameter("submersion", depth)
+		# Tilt the water line ~20° when facing a diagonal (isometric look).
+		var facing := _facing_vector()
+		var slope := 0.0
+		if absf(facing.x) > 0.4 and absf(facing.y) > 0.4:
+			var tilt := tan(deg_to_rad(20.0))
+			slope = -tilt if facing.x * facing.y > 0.0 else tilt
+		_submerge_mat.set_shader_parameter("water_slope", slope)
 
 
 func _do_attack_hit() -> void:
