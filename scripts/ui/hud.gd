@@ -85,6 +85,7 @@ func _process(_delta: float) -> void:
 	var local := _get_local_player()
 	if local:
 		set_stamina(local.stamina, local.max_stamina)
+		set_health(local.health, local.max_health)
 
 	if _map_size == Vector2.ZERO:
 		return

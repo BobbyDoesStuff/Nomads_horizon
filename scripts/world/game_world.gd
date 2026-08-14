@@ -3,11 +3,13 @@ extends Node2D
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const TILE_DIR     := "res://assets/tiles"
+const HEALTH_SYNC_INTERVAL := 0.5
 
 var _remote_players: Dictionary = {}
 var _spawned:         bool      = false
 var _map_bounds:      Rect2              # world-coord bounds of the background
 var _bg_image:        Image     = null   # for alpha-sampling walkability
+var _health_sync_timer: float  = 0.0
 
 
 func _ready() -> void:
@@ -24,6 +26,25 @@ func _ready() -> void:
 	if NetworkManager.is_server:
 		multiplayer.peer_connected.connect(_on_peer_connected)
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+
+
+func _physics_process(delta: float) -> void:
+	if not NetworkManager.is_server:
+		return
+	_server_health_tick(delta)
+
+
+# Server-authoritative health: regen every player + periodic broadcast to clients.
+func _server_health_tick(delta: float) -> void:
+	for child in get_children():
+		if child is CharacterBody2D:
+			child.tick_regen(delta)
+	_health_sync_timer += delta
+	if _health_sync_timer >= HEALTH_SYNC_INTERVAL:
+		_health_sync_timer = 0.0
+		for child in get_children():
+			if child is CharacterBody2D:
+				_broadcast_health.rpc(child.name.to_int(), child.health)
 
 
 # ------------------------------------------------------------------ map building
@@ -264,7 +285,6 @@ func recv_position(peer_id: int, pos: Vector2, facing: int = 0) -> void:
 		return
 	var p := get_node_or_null(str(peer_id))
 	if p:
-		p.global_position = pos
 		p._remote_pos = pos
 		p._facing_dir = facing
 	_broadcast_position.rpc(peer_id, pos, facing)
@@ -281,3 +301,54 @@ func _broadcast_position(peer_id: int, pos: Vector2, facing: int = 0) -> void:
 	if _remote_players.has(peer_id):
 		_remote_players[peer_id]._remote_pos = pos
 		_remote_players[peer_id]._facing_dir = facing
+
+
+# ------------------------------------------------------------------ attack sync
+@rpc("any_peer", "call_remote", "reliable")
+func recv_attack(peer_id: int, facing: int = 0) -> void:
+	if not NetworkManager.is_server:
+		return
+	# Play the attack on the server's own copy so the host sees it too.
+	var p := get_node_or_null(str(peer_id))
+	if p:
+		p.play_attack_animation(facing)
+	_broadcast_attack.rpc(peer_id, facing)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _broadcast_attack(peer_id: int, facing: int = 0) -> void:
+	if peer_id == multiplayer.get_unique_id():
+		return
+	var p := get_node_or_null(str(peer_id))
+	if p:
+		p.play_attack_animation(facing)
+
+
+# ------------------------------------------------------------------ damage + health
+@rpc("any_peer", "call_remote", "reliable")
+func recv_damage(victim_id: int, damage: float) -> void:
+	if not NetworkManager.is_server:
+		return
+	_apply_damage(victim_id, damage)
+
+
+func _apply_damage(victim_id: int, damage: float) -> void:
+	var p := get_node_or_null(str(victim_id))
+	if not p:
+		return
+	p.take_damage(damage)
+	_broadcast_damage.rpc(victim_id, p.health)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _broadcast_damage(victim_id: int, health: float) -> void:
+	var p := get_node_or_null(str(victim_id))
+	if p:
+		p.receive_damage(health)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _broadcast_health(victim_id: int, health: float) -> void:
+	var p := get_node_or_null(str(victim_id))
+	if p:
+		p.set_health(health)

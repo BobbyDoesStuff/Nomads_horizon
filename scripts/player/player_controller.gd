@@ -6,8 +6,10 @@ extends CharacterBody2D
 @export var max_stamina: float = 100.0
 @export var stamina_drain: float = 25.0   # per second while sprinting
 @export var stamina_regen: float = 20.0   # per second while not sprinting
+@export var max_health: float = 100.0
 
 var stamina: float = 0.0
+var health: float = 0.0
 
 var _target:         Vector2
 var _target_set:     bool    = false
@@ -20,6 +22,9 @@ var _bubble_timer:   Timer   = null
 var _attacking:      bool    = false
 var _attack_cooldown: float  = 0.0
 var _slash:          Line2D = null
+var _time_since_damage: float      = 0.0
+var _healthbar:          ProgressBar = null
+var _healthbar_timer:    Timer       = null
 
 # ------------------------------------------------------------------ direction constants
 # Row order in the sprite sheet (top to bottom):
@@ -53,6 +58,11 @@ const DIR_COUNT   := 8
 const ROW_TO_SECTOR := [6, 7, 0, 1, 2, 3, 4, 5]
 const ATTACK_DURATION := 0.25
 const ATTACK_COOLDOWN := 0.5
+const ATTACK_DAMAGE := 10.0
+const ATTACK_RANGE := 60.0
+const ATTACK_ARC := 1.2       # half-angle of the swing (radians)
+const REGEN_DELAY := 5.0      # seconds of no damage before regen starts
+const REGEN_RATE := 10.0      # hp restored per second
 
 
 func _ready() -> void:
@@ -61,11 +71,13 @@ func _ready() -> void:
 	_target = global_position
 	_target_set = true
 	stamina = max_stamina
+	health = max_health
 
 	_setup_sprite_frames()
 	_setup_name_label()
 	_setup_chat_bubble()
 	_setup_attack()
+	_setup_healthbar()
 	_setup_camera()
 
 	if multiplayer.multiplayer_peer != null and not NetworkManager.is_server:
@@ -193,7 +205,19 @@ func _start_attack() -> void:
 		return
 	_attacking = true
 	_attack_cooldown = ATTACK_COOLDOWN
+	_play_attack_visual()
+	_sync_attack()
+	_do_attack_hit()
 
+
+# Called by remote players via RPC to replay this player's attack.
+func play_attack_animation(facing: int = -1) -> void:
+	if facing >= 0:
+		_facing_dir = facing
+	_play_attack_visual()
+
+
+func _play_attack_visual() -> void:
 	var facing := _facing_vector()
 	_slash.rotation = facing.angle()
 	_slash.modulate.a = 1.0
@@ -214,6 +238,105 @@ func _start_attack() -> void:
 		_slash.visible = false
 		_attacking = false
 	)
+
+
+func _sync_attack() -> void:
+	if multiplayer.multiplayer_peer == null or multiplayer.get_peers().size() == 0:
+		return
+	var world := get_parent()
+	if world and world.has_method("recv_attack"):
+		var pid := name.to_int()
+		if NetworkManager.is_server:
+			world._broadcast_attack.rpc(pid, _facing_dir)
+		else:
+			world.recv_attack.rpc_id(1, pid, _facing_dir)
+
+
+func _setup_healthbar() -> void:
+	_healthbar = ProgressBar.new()
+	_healthbar.name = "HealthBar"
+	_healthbar.max_value = max_health
+	_healthbar.value = health
+	_healthbar.show_percentage = false
+	_healthbar.size = Vector2(60, 8)
+	_healthbar.position = Vector2(-30, -114)
+	_healthbar.visible = false
+	_healthbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.9, 0.2, 0.2, 1.0)
+	_healthbar.add_theme_stylebox_override("fill", fill)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.1, 0.1, 0.1, 0.7)
+	_healthbar.add_theme_stylebox_override("background", bg)
+	add_child(_healthbar)
+
+	_healthbar_timer = Timer.new()
+	_healthbar_timer.one_shot = true
+	_healthbar_timer.wait_time = 4.0
+	_healthbar_timer.timeout.connect(func() -> void: _healthbar.visible = false)
+	add_child(_healthbar_timer)
+
+
+func take_damage(amount: float) -> void:
+	health = maxf(0.0, health - amount)
+	_time_since_damage = 0.0
+	_show_damage()
+
+
+func receive_damage(new_health: float) -> void:
+	health = clampf(new_health, 0.0, max_health)
+	_show_damage()
+
+
+func set_health(value: float) -> void:
+	health = clampf(value, 0.0, max_health)
+
+
+func tick_regen(delta: float) -> void:
+	_time_since_damage += delta
+	if _time_since_damage >= REGEN_DELAY and health < max_health:
+		health = minf(max_health, health + REGEN_RATE * delta)
+
+
+func _show_damage() -> void:
+	if _healthbar:
+		_healthbar.max_value = max_health
+		_healthbar.value = health
+		_healthbar.visible = true
+		_healthbar_timer.start()
+	_flash_damage()
+
+
+func _flash_damage() -> void:
+	var sprite: AnimatedSprite2D = $AnimatedSprite2D
+	var tween := create_tween()
+	tween.tween_property(sprite, "modulate", Color(1.0, 0.3, 0.3), 0.08)
+	tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 1.0), 0.2)
+
+
+func _do_attack_hit() -> void:
+	if multiplayer.multiplayer_peer == null:
+		return  # solo: no other players to hit
+	var facing := _facing_vector()
+	for node in get_tree().get_nodes_in_group("players"):
+		if node == self:
+			continue
+		var offset: Vector2 = node.global_position - global_position
+		if offset.length() > ATTACK_RANGE:
+			continue
+		if offset.normalized().dot(facing) < cos(ATTACK_ARC):
+			continue
+		_send_damage(node.name.to_int(), ATTACK_DAMAGE)
+
+
+func _send_damage(victim_id: int, damage: float) -> void:
+	var world := get_parent()
+	if not world or not world.has_method("recv_damage"):
+		return
+	if NetworkManager.is_server:
+		world._apply_damage(victim_id, damage)
+	else:
+		world.recv_damage.rpc_id(1, victim_id, damage)
 
 
 # ------------------------------------------------------------------ direction helpers
