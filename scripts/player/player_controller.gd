@@ -44,6 +44,10 @@ var _near_water:     bool    = false # near/touching/inside water (fishing rod)
 var _water_dir:      Vector2 = Vector2.ZERO  # direction toward the nearest water
 var _build_mode:     bool    = false # build mode active
 var _build_layer:    int     = 0     # current build layer (0 = foundation)
+var _build_tile:     int     = 10    # current block type (cube tile index)
+var _build_flip_h:   bool    = false # horizontal rotation
+var _build_flip_v:   bool    = false # vertical rotation
+var _rotation_mode:  bool    = false # R: rotate block with arrow keys
 var _ghost:          Sprite2D = null # block placement preview
 var _time_since_damage: float      = 0.0
 var _healthbar:          ProgressBar = null
@@ -480,18 +484,19 @@ func _set_build_mode(on: bool) -> void:
 	_build_mode = on
 	if _ghost == null:
 		_ghost = Sprite2D.new()
-		_ghost.centered = false
+		_ghost.centered = true
 		_ghost.modulate = Color(1, 1, 1, 0.5)
 		_ghost.z_index = 100
-		var bm := _get_build_manager()
-		if bm:
-			_ghost.texture = bm.get_block_texture()
 		add_child(_ghost)
 	_ghost.visible = on
 	if on:
 		_cancel_harvest()
 		_channeling = false
 		_build_layer = 0
+		_build_tile = 10
+		_build_flip_h = false
+		_build_flip_v = false
+		_rotation_mode = false
 
 
 func _update_build_ghost() -> void:
@@ -500,15 +505,18 @@ func _update_build_ghost() -> void:
 	var bm := _get_build_manager()
 	if bm == null:
 		return
+	_ghost.texture = bm.get_block_texture(_build_tile)
+	_ghost.flip_h = _build_flip_h
+	_ghost.flip_v = _build_flip_v
 	var grid: Vector2i = bm.grid_coords(get_global_mouse_position())
-	_ghost.global_position = bm.block_top_left(grid, _build_layer)
+	_ghost.global_position = bm.block_anchor(grid, _build_layer)
 
 
 func _place_build_block() -> void:
 	var bm := _get_build_manager()
 	if bm == null:
 		return
-	bm.place_block(get_global_mouse_position(), _build_layer)
+	bm.place_block(get_global_mouse_position(), _build_layer, _build_tile, _build_flip_h, _build_flip_v)
 
 
 func _spawn_float_text(text: String, color: Color) -> void:
@@ -946,7 +954,15 @@ func _input(event: InputEvent) -> void:
 				_set_tool(event.keycode - KEY_2)
 			elif event.keycode == KEY_B:
 				_set_build_mode(not _build_mode)
-	# Build mode: scroll to change layer, left-click to place a block.
+			elif _build_mode and event.keycode == KEY_R:
+				_rotation_mode = not _rotation_mode
+			elif _build_mode and _rotation_mode:
+				match event.keycode:
+					KEY_LEFT, KEY_RIGHT:
+						_build_flip_h = not _build_flip_h
+					KEY_UP, KEY_DOWN:
+						_build_flip_v = not _build_flip_v
+	# Build mode: scroll = layer, left-click = place, right-click = change block type.
 	if _build_mode and event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
@@ -958,6 +974,9 @@ func _input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if not _is_typing():
 					_place_build_block()
+				return
+			MOUSE_BUTTON_RIGHT:
+				_build_tile = (_build_tile + 1) % 60  # cycle the 60 cube tiles
 				return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if not _is_typing():
