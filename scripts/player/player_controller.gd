@@ -130,10 +130,23 @@ func _setup_camera() -> void:
 
 # ------------------------------------------------------------------ sprite setup
 func _setup_sprite_frames() -> void:
+	var sf := _build_frames("none", "sword")
+	if sf == null:
+		push_error("[Player] Missing sprite sheets")
+		return
+	_apply_frames(sf)
+	var sprite: AnimatedSprite2D = $AnimatedSprite2D
+	sprite.scale = Vector2(SPRITE_SCALE, SPRITE_SCALE)
+	sprite.position = Vector2(0, -SPRITE_FEET_Y * SPRITE_SCALE)
+	sprite.animation_finished.connect(_on_animation_finished)
+	_submerge_mat = ShaderMaterial.new()
+	_submerge_mat.shader = SUBMERGE_SHADER
+	sprite.material = _submerge_mat
+
+
+# Build the SpriteFrames for a tool (pure — runs on a background thread).
+func _build_frames(tool: String, attack_sheet: String) -> SpriteFrames:
 	var sf := SpriteFrames.new()
-	var tool := "none"
-	if _current_tool >= 0 and _current_tool < TOOLS.size():
-		tool = TOOLS[_current_tool]
 	var walk_path := "res://assets/sprites/spr_walk_%s.png" % tool
 	var idle_path := "res://assets/sprites/spr_idle_%s.png" % tool
 	if not FileAccess.file_exists(walk_path):
@@ -142,10 +155,9 @@ func _setup_sprite_frames() -> void:
 		idle_path = "res://assets/sprites/spr_idle_none.png"
 	var walk_img := _load_png(walk_path)
 	var idle_img := _load_png(idle_path)
-	var attack_img := _load_png("res://assets/sprites/spr_attack_%s.png" % _attack_sheet())
+	var attack_img := _load_png("res://assets/sprites/spr_attack_%s.png" % attack_sheet)
 	if walk_img == null or idle_img == null or attack_img == null:
-		push_error("[Player] Missing sprite sheets")
-		return
+		return null
 	var walk_tex := ImageTexture.create_from_image(walk_img)
 	var idle_tex := ImageTexture.create_from_image(idle_img)
 	var attack_tex := ImageTexture.create_from_image(attack_img)
@@ -180,16 +192,16 @@ func _setup_sprite_frames() -> void:
 			at.region = Rect2(f * FRAME_W, sheet_row * FRAME_H, FRAME_W, FRAME_H)
 			sf.add_frame(ANIM_ATTACK[row], at)
 
+	return sf
+
+
+# Apply frames to the sprite (main thread only).
+func _apply_frames(sf: SpriteFrames) -> void:
 	var sprite: AnimatedSprite2D = $AnimatedSprite2D
 	sprite.sprite_frames = sf
-	sprite.scale = Vector2(SPRITE_SCALE, SPRITE_SCALE)
-	sprite.position = Vector2(0, -SPRITE_FEET_Y * SPRITE_SCALE)
-	sprite.animation_finished.connect(_on_animation_finished)
+	sprite.flip_h = bool(DIR_FLIP[_facing_dir])
 	_current_anim = ANIM_IDLE[0]
 	sprite.play(_current_anim)
-	_submerge_mat = ShaderMaterial.new()
-	_submerge_mat.shader = SUBMERGE_SHADER
-	sprite.material = _submerge_mat
 
 
 func _on_animation_finished() -> void:
@@ -201,8 +213,21 @@ func _set_tool(index: int) -> void:
 	if index == _current_tool:
 		return
 	_current_tool = index
-	_setup_sprite_frames()
-	_play_anim(ANIM_IDLE[_facing_dir])
+	var tool := "none"
+	if index >= 0 and index < TOOLS.size():
+		tool = TOOLS[index]
+	var attack_sheet := _attack_sheet()
+	WorkerThreadPool.add_task(_build_frames_task.bind(tool, attack_sheet, index))
+
+
+func _build_frames_task(tool: String, attack_sheet: String, index: int) -> void:
+	var sf := _build_frames(tool, attack_sheet)
+	_apply_frames_deferred.call_deferred(sf, index)
+
+
+func _apply_frames_deferred(sf: SpriteFrames, index: int) -> void:
+	if sf != null and index == _current_tool:
+		_apply_frames(sf)
 
 
 func _attack_sheet() -> String:
