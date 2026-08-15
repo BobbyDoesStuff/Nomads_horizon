@@ -10,6 +10,7 @@ const HALF_W := 128.0             # half the diamond's horizontal diagonal
 const HALF_H := 64.0              # half the diamond's vertical diagonal
 const LAYER_OFFSET_Y := -128.0    # vertical offset between stacked layers
 const FOOTPRINT_LIFT := -64.0     # cube footprint sits 64px below the tile centre
+const LAYER_SORT_BIAS := 4.0      # Y added per layer so stacked blocks sort above (15-layer cap)
 
 var _blocks: Dictionary = {}      # Vector2i(grid) -> Array[Node2D] (one per layer)
 var _textures: Dictionary = {}    # tile index -> Texture2D
@@ -64,12 +65,17 @@ func place_block(world_pos: Vector2, layer: int, tile: int = DEFAULT_TILE, flip_
 	# Wrapper node sits on the footprint (used as the y-sort key); the sprite
 	# child carries the visual elevation, so stacked blocks keep the same sort Y.
 	var node := Node2D.new()
-	node.position = block_anchor(grid, 0)
+	# Sort key = footprint + a tiny per-layer bias, so a block stacked on top of
+	# another draws in front of it instead of tying in the y-sort.
+	node.position = block_anchor(grid, 0) + Vector2(0, layer * LAYER_SORT_BIAS)
 
 	# Collision on the diamond footprint — blocks the player from walking through.
+	# The node origin carries the per-layer sort bias, so cancel it here to keep
+	# the collision footprint on the ground (not drifting down with each layer).
 	var body := StaticBody2D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
+	body.position = Vector2(0, -layer * LAYER_SORT_BIAS)
 	var shape := CollisionShape2D.new()
 	var poly := ConvexPolygonShape2D.new()
 	poly.points = PackedVector2Array([
@@ -84,13 +90,23 @@ func place_block(world_pos: Vector2, layer: int, tile: int = DEFAULT_TILE, flip_
 	sprite.centered = true
 	sprite.flip_h = flip_h
 	sprite.flip_v = flip_v
-	sprite.position = Vector2(0, FOOTPRINT_LIFT + layer * LAYER_OFFSET_Y)
+	sprite.position = Vector2(0, FOOTPRINT_LIFT + layer * LAYER_OFFSET_Y - layer * LAYER_SORT_BIAS)
 	node.add_child(sprite)
 
+	node.set_meta("layer", layer)  # remember the layer so auto-stack can query it
 	get_parent().add_child(node)  # add to the y-sorted world, not this manager
 	if not _blocks.has(grid):
 		_blocks[grid] = []
 	_blocks[grid].append(node)
+
+
+func top_layer_at(grid: Vector2i) -> int:
+	## Highest layer present at a cell, or -1 if the cell is empty.
+	var top := -1
+	if _blocks.has(grid):
+		for node in _blocks[grid]:
+			top = maxi(top, int(node.get_meta("layer", 0)))
+	return top
 
 
 func _load_image(path: String) -> Image:

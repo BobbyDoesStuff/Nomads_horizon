@@ -499,6 +499,12 @@ func _set_build_mode(on: bool) -> void:
 		_rotation_mode = false
 
 
+func _effective_build_layer(bm: Node, grid: Vector2i) -> int:
+	## Auto-stack: place one block above the tallest block under the cursor,
+	## unless the player scrolled to an explicit (higher) layer.
+	return maxi(_build_layer, bm.top_layer_at(grid) + 1)
+
+
 func _update_build_ghost() -> void:
 	if _ghost == null or not _build_mode:
 		return
@@ -509,14 +515,15 @@ func _update_build_ghost() -> void:
 	_ghost.flip_h = _build_flip_h
 	_ghost.flip_v = _build_flip_v
 	var grid: Vector2i = bm.grid_coords(get_global_mouse_position())
-	_ghost.global_position = bm.block_sprite_pos(grid, _build_layer)
+	_ghost.global_position = bm.block_sprite_pos(grid, _effective_build_layer(bm, grid))
 
 
 func _place_build_block() -> void:
 	var bm := _get_build_manager()
 	if bm == null:
 		return
-	bm.place_block(get_global_mouse_position(), _build_layer, _build_tile, _build_flip_h, _build_flip_v)
+	var grid: Vector2i = bm.grid_coords(get_global_mouse_position())
+	bm.place_block(get_global_mouse_position(), _effective_build_layer(bm, grid), _build_tile, _build_flip_h, _build_flip_v)
 
 
 func _spawn_float_text(text: String, color: Color) -> void:
@@ -963,7 +970,9 @@ func _input(event: InputEvent) -> void:
 					KEY_UP, KEY_DOWN:
 						_build_flip_v = not _build_flip_v
 	# Build mode: scroll = layer, left-click = place, right-click = change block type.
-	if _build_mode and event is InputEventMouseButton and event.pressed:
+	if _build_mode and event is InputEventMouseButton:
+		# Scroll wheel is a momentary event and can report `pressed == false` on
+		# some platforms, so act on button_index alone; clicks below still gate on pressed.
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
 				_build_layer += 1
@@ -971,13 +980,15 @@ func _input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_DOWN:
 				_build_layer = maxi(0, _build_layer - 1)
 				return
-			MOUSE_BUTTON_LEFT:
-				if not _is_typing():
-					_place_build_block()
-				return
-			MOUSE_BUTTON_RIGHT:
-				_build_tile = (_build_tile + 1) % 60  # cycle the 60 cube tiles
-				return
+		if event.pressed:
+			match event.button_index:
+				MOUSE_BUTTON_LEFT:
+					if not _is_typing():
+						_place_build_block()
+					return
+				MOUSE_BUTTON_RIGHT:
+					_build_tile = (_build_tile + 1) % 60  # cycle the 60 cube tiles
+					return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if not _is_typing():
 			_start_attack()
