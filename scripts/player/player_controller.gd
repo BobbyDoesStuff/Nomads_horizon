@@ -43,7 +43,7 @@ var _nearby_resource: Node   = null  # resource node in range (axe/pickaxe equip
 var _near_water:     bool    = false # near/touching/inside water (fishing rod)
 var _water_dir:      Vector2 = Vector2.ZERO  # direction toward the nearest water
 var _build_mode:     bool    = false # build mode active
-var _build_layer:    int     = 0     # current build layer (0 = foundation)
+var _build_layer:    int     = -1    # build layer (-1 = auto-stack, >= 0 = explicit)
 var _build_tile:     int     = 10    # current block type (cube tile index)
 var _build_flip_h:   bool    = false # horizontal rotation
 var _build_flip_v:   bool    = false # vertical rotation
@@ -492,7 +492,7 @@ func _set_build_mode(on: bool) -> void:
 	if on:
 		_cancel_harvest()
 		_channeling = false
-		_build_layer = 0
+		_build_layer = -1
 		_build_tile = 10
 		_build_flip_h = false
 		_build_flip_v = false
@@ -500,9 +500,15 @@ func _set_build_mode(on: bool) -> void:
 
 
 func _effective_build_layer(bm: Node, grid: Vector2i) -> int:
-	## Auto-stack: place one block above the tallest block under the cursor,
-	## unless the player scrolled to an explicit (higher) layer.
-	return maxi(_build_layer, bm.top_layer_at(grid) + 1)
+	## Auto-stack when _build_layer is -1: on an occupied cell place one above the
+	## tallest block here; on an empty cell match the tallest adjacent stack
+	## (roofs, bridges). A non-negative _build_layer is an explicit scroll override.
+	if _build_layer >= 0:
+		return _build_layer
+	var own_top: int = bm.top_layer_at(grid)
+	if own_top >= 0:
+		return own_top + 1
+	return maxi(0, bm.neighbor_top_layer_at(grid))
 
 
 func _update_build_ghost() -> void:
@@ -765,7 +771,7 @@ func _physics_process(delta: float) -> void:
 	if not _target_set:
 		return
 
-	if not is_multiplayer_authority():
+	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
 		# Remote player — render the interpolated position from the snapshot buffer.
 		global_position = _interpolate_position()
 		if _remote_vel.length_squared() > 25.0:
@@ -952,7 +958,7 @@ func _on_path_ready(path: Array) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_multiplayer_authority():
+	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
 		return
 	# Tool selection: number keys 1-9, and B to toggle build mode.
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -978,7 +984,7 @@ func _input(event: InputEvent) -> void:
 				_build_layer += 1
 				return
 			MOUSE_BUTTON_WHEEL_DOWN:
-				_build_layer = maxi(0, _build_layer - 1)
+				_build_layer = maxi(-1, _build_layer - 1)
 				return
 		if event.pressed:
 			match event.button_index:

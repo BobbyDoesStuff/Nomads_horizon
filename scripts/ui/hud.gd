@@ -169,7 +169,7 @@ func _process(_delta: float) -> void:
 		var pid: int = node.name.to_int()
 		seen_ids.append(pid)
 
-		if node.is_multiplayer_authority():
+		if multiplayer.multiplayer_peer == null or node.is_multiplayer_authority():
 			# Local player — red dot
 			if _minimap_dot:
 				_minimap_dot.position = Vector2(node.global_position.x * sx - 2.0,
@@ -202,7 +202,7 @@ func _make_remote_dot() -> ColorRect:
 
 func _get_local_player() -> CharacterBody2D:
 	for node in get_tree().get_nodes_in_group("players"):
-		if node is CharacterBody2D and node.is_multiplayer_authority():
+		if node is CharacterBody2D and (multiplayer.multiplayer_peer == null or node.is_multiplayer_authority()):
 			return node
 	return null
 

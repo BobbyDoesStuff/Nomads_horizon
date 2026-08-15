@@ -424,7 +424,7 @@ func _spawn_my_player() -> void:
 		return
 	_spawned = true
 
-	var id := multiplayer.get_unique_id()
+	var id: int = multiplayer.get_unique_id() if multiplayer.multiplayer_peer != null else 1
 	var player := _make_player(id)
 	player.set_multiplayer_authority(id)
 	add_child(player)

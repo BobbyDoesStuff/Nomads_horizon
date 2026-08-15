@@ -109,6 +109,17 @@ func top_layer_at(grid: Vector2i) -> int:
 	return top
 
 
+func neighbor_top_layer_at(grid: Vector2i) -> int:
+	## Tallest layer among the eight surrounding cells, or -1 if all are empty.
+	var top := -1
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			top = maxi(top, top_layer_at(grid + Vector2i(dx, dy)))
+	return top
+
+
 func _load_image(path: String) -> Image:
 	if not FileAccess.file_exists(path):
 		push_error("[Build] Missing: " + path)
